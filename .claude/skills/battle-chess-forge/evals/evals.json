@@ -1,0 +1,23 @@
+{
+  "skill_name": "battle-chess-forge",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Set up the chess game repo from scratch: vite + three + gsap + chess.js, board on screen, placeholder pieces loaded, and the camera swinging to whoever's turn it is.",
+      "expected_output": "Scaffolded repo matching the layout in gameplay-architecture.md, placeholder GLBs generated and validated, perft tests passing, spherical-proxy GSAP turn swing.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "The rime queen needs her capture animation - make it feel huge when she takes something.",
+      "expected_output": "Summon -> glide -> sweeping cut choreography with labels, hit-stop, cut-plane shatter split, heroOrbit shot, skippable timeline; asset clip/extras checked against the contract.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Our pawns look like toys. Build a proper detailed emberhold pawn in Blender and export it for the game.",
+      "expected_output": "Follows the detail pipeline (high-poly, retopo, bake, PBR textures, LOD1, fragments), stays within budgets, exports GLB that passes validate_glb.py --stage final, original design per art bible.",
+      "files": []
+    }
+  ]
+}

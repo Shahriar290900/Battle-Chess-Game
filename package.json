@@ -1,0 +1,40 @@
+{
+  "name": "battle-chess-game",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:pages": "BASE_PATH=/Battle-Chess-Game/ vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "validate:assets": "python3 scripts/validate_glb.py public/models --expect-all --stage final",
+    "forge": "python3 tools/forge/build_all.py",
+    "turntables": "node tools/preview/render_turntables.mjs",
+    "prepare-music": "node scripts/prepare-music.mjs",
+    "android:apk": "node scripts/build-apk.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/screen-orientation": "7.0.4",
+    "@capacitor/status-bar": "7.0.6",
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "chess.js": "1.4.0",
+    "gsap": "3.15.0",
+    "postprocessing": "6.39.5",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9",
+    "@playwright/test": "1.63.0",
+    "@types/three": "0.186.0",
+    "stockfish": "19.0.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "4.1.11"
+  }
+}
