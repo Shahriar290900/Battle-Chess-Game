@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="icon" href="data:," />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cinematics sandbox</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0a0c; color: #ddd; font: 13px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #ui { position: fixed; top: 8px; left: 8px; display: flex; flex-wrap: wrap; gap: 4px; max-width: 70vw; z-index: 2; }
+  #ui.hidden { display: none; }
+  button, select { background: #241f1c; color: #e8dcc8; border: 1px solid #5b4a3a; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+  button.rime { border-color: #4a7a96; color: #bfefff; }
+  #status { position: fixed; bottom: 8px; left: 8px; opacity: .7; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"></div>
+<div id="status">loading…</div>
+<script type="module" src="./cinematics.ts"></script>
+</body>
+</html>
