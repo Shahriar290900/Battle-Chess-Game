@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Turntable renderer</title>
+<style>html,body{margin:0;background:#0b0c0f;color:#ccc;font:12px monospace}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
+renderer.setPixelRatio(1);
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0c10);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.3;   // dim IBL so black obsidian stays black; key/rim do the shaping
+
+// presentation lighting: warm key (Emberhold side), cold rim (Rime side), low ambient
+const key = new THREE.DirectionalLight(0xffd3a1, 3.8);
+key.position.set(-2.2, 3.4, 2.6);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -1.6; key.shadow.camera.right = 1.6; key.shadow.camera.top = 2; key.shadow.camera.bottom = -1;
+key.shadow.camera.near = 0.5; key.shadow.camera.far = 9;
+key.shadow.bias = -0.0004; key.shadow.normalBias = 0.01;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fcbff, 3.0);
+rim.position.set(2.6, 2.2, -3.0);
+scene.add(rim);
+const rim2 = new THREE.DirectionalLight(0x6fb8ff, 1.0);
+rim2.position.set(-3, 1.2, -2);
+scene.add(rim2);
+scene.add(new THREE.AmbientLight(0x202838, 0.5));
+
+// floor: shadow catcher + a faint dark disc, so pieces float in the dark backdrop and dark Rime armour never sits on a bright plane
+const ground = new THREE.Mesh(new THREE.CircleGeometry(3.4, 64).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.55 }));
+ground.receiveShadow = true;
+scene.add(ground);
+const fade = document.createElement('canvas'); fade.width = fade.height = 256;
+{ const c = fade.getContext('2d'); const g = c.createRadialGradient(128, 128, 8, 128, 128, 126);
+  g.addColorStop(0, '#3a3a40'); g.addColorStop(0.5, '#1a1a1f'); g.addColorStop(1, '#000'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); }
+const glow = new THREE.Mesh(new THREE.CircleGeometry(2.1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(fade), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+glow.position.y = -0.002; glow.material.map.colorSpace = THREE.SRGBColorSpace;
+scene.add(glow);
+
+const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50);
+const loader = new GLTFLoader();
+let composer, bloom, size = { w: 0, h: 0 };
+
+function setSize(w, h) {
+  if (size.w === w && size.h === h) return;
+  size = { w, h };
+  renderer.setSize(w, h, false);
+  const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+  composer = new EffectComposer(renderer, rt);
+  composer.setSize(w, h);
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.5, 1.15);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+}
+
+const cache = new Map();
+async function load(id) {
+  if (!cache.has(id)) {
+    const gltf = await loader.loadAsync(`/models/${id}.glb`);
+    cache.set(id, gltf);
+  }
+  return cache.get(id);
+}
+
+// each asset instance gets its own clone-free copy: load again per use (SkinnedMesh clones are fiddly)
+async function instantiate(id, lod) {
+  const gltf = await loader.loadAsync(`/models/${id}.glb?${Math.random()}`);
+  const root = gltf.scene;
+  root.traverse((o) => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      o.frustumCulled = false;
+      o.castShadow = true; o.receiveShadow = true;
+      if (o.name.endsWith('_LOD0')) o.visible = lod === 0;
+      if (o.name.endsWith('_LOD1')) o.visible = lod === 1;
+    }
+  });
+  const mixer = new THREE.AnimationMixer(root);
+  return { id, root, gltf, mixer, extras: root.children.length ? root.userData : {} };
+}
+
+function view(target, dist, yawDeg, pitchDeg, fov) {
+  camera.fov = fov ?? 28;
+  camera.aspect = size.w / size.h;
+  camera.updateProjectionMatrix();
+  const yaw = THREE.MathUtils.degToRad(yawDeg), pitch = THREE.MathUtils.degToRad(pitchDeg);
+  camera.position.set(target.x + dist * Math.sin(yaw) * Math.cos(pitch), target.y + dist * Math.sin(pitch), target.z + dist * Math.cos(yaw) * Math.cos(pitch));
+  camera.lookAt(target);
+}
+
+function pose(inst, clipName, t) {
+  inst.mixer.stopAllAction();
+  if (!clipName) { inst.mixer.setTime(0); return; }
+  const clip = inst.gltf.animations.find((c) => c.name === clipName);
+  if (!clip) return;
+  const a = inst.mixer.clipAction(clip);
+  a.reset(); a.play(); a.paused = true;
+  a.time = t;
+  inst.mixer.setTime(0);
+  a.time = t;
+  inst.mixer.update(0);
+}
+
+function labelled(ctx, text, x, y) {
+  ctx.font = '600 15px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 4, y - 14, ctx.measureText(text).width + 10, 20);
+  ctx.fillStyle = '#e8dcc8'; ctx.fillText(text, x, y);
+}
+
+const api = {
+  // 8 views at 45 degree steps, 4x2 contact sheet
+  async sheet(id, { w = 480, h = 540, lod = 0, pitch = 12 } = {}) {
+    const inst = await instantiate(id, lod);
+    scene.add(inst.root);
+    setSize(w, h);
+    const out = document.createElement('canvas'); out.width = w * 4; out.height = h * 2;
+    const ctx = out.getContext('2d'); ctx.fillStyle = '#0b0c10'; ctx.fillRect(0, 0, out.width, out.height);
+    const target = new THREE.Vector3(0, 0.50, 0);
+    for (let i = 0; i < 8; i++) {
+      view(target, 3.5, i * 45, pitch);
+      composer.render();
+      ctx.drawImage(canvas, (i % 4) * w, Math.floor(i / 4) * h);
+      labelled(ctx, `${id}  ${i * 45}deg`, (i % 4) * w + 10, Math.floor(i / 4) * h + 22);
+    }
+    scene.remove(inst.root);
+    return out.toDataURL('image/png');
+  },
+  // one large view (for close inspection)
+  async single(id, { w = 1080, h = 1080, lod = 0, yaw = 30, pitch = 12, dist = 2.5, ty = 0.55, clip = null, t = 0 } = {}) {
+    const inst = await instantiate(id, lod);
+    scene.add(inst.root);
+    setSize(w, h);
+    if (clip) pose(inst, clip, t);
+    view(new THREE.Vector3(0, ty, 0), dist, yaw, pitch, 28);
+    composer.render();
+    scene.remove(inst.root);
+    return canvas.toDataURL('image/png');
+  },
+  // both factions of a role side by side, 3/4 view
+  async role(role, { w = 1920, h = 1080, lod = 0 } = {}) {
+    const a = await instantiate(`emberhold_${role}`, lod), b = await instantiate(`rime_${role}`, lod);
+    a.root.position.set(-0.62, 0, 0); a.root.rotation.y = THREE.MathUtils.degToRad(28);
+    b.root.position.set(0.62, 0, 0); b.root.rotation.y = THREE.MathUtils.degToRad(-28);
+    scene.add(a.root, b.root);
+    setSize(w, h);
+    view(new THREE.Vector3(0, 0.55, 0), 3.6, 0, 13, 30);
+    composer.render();
+    const out = document.createElement('canvas'); out.width = w; out.height = h;
+    const ctx = out.getContext('2d'); ctx.drawImage(canvas, 0, 0);
+    labelled(ctx, `emberhold_${role}`, 24, 34); labelled(ctx, `rime_${role}`, w - 190, 34);
+    scene.remove(a.root, b.root);
+    return out.toDataURL('image/png');
+  },
+  // 6-frame strip of a clip, 3x2
+  async clip(id, clipName, { w = 640, h = 540, lod = 0, yaw = 38, times = null } = {}) {
+    const inst = await instantiate(id, lod);
+    scene.add(inst.root);
+    setSize(w, h);
+    const clip = inst.gltf.animations.find((c) => c.name === clipName);
+    if (!clip) throw new Error(`no clip ${clipName}`);
+    const dur = clip.duration;
+    const impact = (inst.root.children[0]?.userData || inst.root.userData).impactTime;
+    // evenly spaced, but swap the 4th frame for the impact frame when the clip is Attack
+    const ts = [0, 1, 2, 3, 4, 5].map((i) => (dur * i) / 5);
+    if (clipName === 'Attack' && impact && !times) ts[3] = impact;
+    if (times) for (let i = 0; i < 6; i++) ts[i] = Math.min(times[i] ?? ts[i], dur);
+    const out = document.createElement('canvas'); out.width = w * 3; out.height = h * 2;
+    const ctx = out.getContext('2d'); ctx.fillStyle = '#0b0c10'; ctx.fillRect(0, 0, out.width, out.height);
+    const target = new THREE.Vector3(0, 0.58, 0.1);
+    for (let i = 0; i < 6; i++) {
+      pose(inst, clipName, ts[i]);
+      view(target, 4.4, yaw, 12, 28);
+      composer.render();
+      ctx.drawImage(canvas, (i % 3) * w, Math.floor(i / 3) * h);
+      labelled(ctx, `${id} ${clipName}  t=${ts[i].toFixed(2)}s${clipName === 'Attack' && impact && Math.abs(ts[i] - impact) < 0.004 ? '  (impact)' : ''}`, (i % 3) * w + 10, Math.floor(i / 3) * h + 22);
+    }
+    scene.remove(inst.root);
+    return out.toDataURL('image/png');
+  },
+  info(id) { return load(id).then((g) => ({ animations: g.animations.map((a) => ({ name: a.name, duration: a.duration })), extras: g.scene.userData })); },
+};
+window.turntable = api;
+window.__ready = true;
+</script>
+</body>
+</html>
