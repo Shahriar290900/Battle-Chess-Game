@@ -14,3 +14,5 @@ playwright-report/
 tools/forge/__pycache__/
 **/__pycache__/
 docs/qa/tmp/
+sandbox/**/*.png
+tests/e2e/__screens__/

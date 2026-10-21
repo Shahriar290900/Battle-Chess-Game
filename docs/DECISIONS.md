@@ -15,3 +15,4 @@
 | 11 | Camera default **Follow turn** in pass-and-play, **Fixed to my side** vs AI. | Architecture §7. |
 | 12 | Base path: `./` for local/Capacitor, `/Battle-Chess-Game/` for Pages (`BASE_PATH` env). Assets referenced relative to `import.meta.env.BASE_URL`. | Same build works in both hosts. |
 | 13 | GLBs live in `public/models/` (served as-is by Vite, copied into the APK). Forge writes there directly. | No copy step, one source of truth. |
+| 14 | Playwright drives the **system Google Chrome** (`chromium.launch({ channel: "chrome" })`) — Playwright-bundled Chromium is unsupported on macOS 12. WebGL2 works headless. | Screenshots/turntables/smoke tests. |
