@@ -446,7 +446,19 @@ def make_clips() -> list[Clip]:
     T.keys("spine", "rot", [(0, (0, 0, 0)), (0.55, (-8, 0, 0), "out_cubic"), (1.2, (-8, 0, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("head", "rot", [(0, (0, 0, 0)), (0.55, (-12, 0, 0), "out_cubic"), (1.2, (-12, 0, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("body", "pos", [(0, (0, 0, 0)), (0.55, (0, 0.02, 0), "out_cubic"), (1.2, (0, 0.02, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
-    return [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.4)       # kneels, head bowed; the prism ring sinks and dims, the fist opens (he is unarmed)
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.20, (0, 0, 0), "in_out_cubic"), (0.95, (0, -0.25, 0.04), "in_out_cubic"), (2.4, (0, -0.25, 0.04))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.95, (6, 0, 0), "in_out_cubic"), (2.4, (6, 0, 0))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.30, (-3, 0, 0), "in_out_cubic"), (1.00, (22, 0, 0), "in_out_cubic"), (2.4, (26, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.30, (-4, 0, 0), "in_out_cubic"), (1.05, (38, 0, 0), "in_out_cubic"), (2.4, (44, 0, 0), "in_out_cubic")])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.50, (-6, 0, 0), "in_out_cubic"), (1.20, (14, 0, 0), "in_out_cubic"), (2.4, (18, 0, 0), "in_out_cubic")])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.50, (0, 0, 0)), (1.20, (40, 0, 0), "in_out_cubic"), (2.4, (48, 0, 0), "in_out_cubic")])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.50, (-6, 0, 0)), (1.20, (14, 0, 0), "in_out_cubic"), (2.4, (18, 0, 0), "in_out_cubic")])
+    S.keys("hand_L", "rot", [(0, (0, 0, 0)), (1.20, (40, 0, 0), "in_out_cubic"), (2.4, (48, 0, 0), "in_out_cubic")])
+    S.keys("top", "pos", [(0, (0, 0, 0)), (0.5, (0, 0.04, 0), "out_cubic"), (1.6, (0, -0.13, 0.02), "in_out_cubic"), (2.4, (0, -0.15, 0.03))])
+    S.keys("top", "scale", [(0, (1, 1, 1)), (0.5, (1.1, 1, 1.1), "out_cubic"), (1.6, (0.8, 0.7, 0.8), "in_out_cubic"), (2.4, (0.75, 0.65, 0.75))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (1.0, (0, 40, 0), "in_out_cubic"), (2.4, (14, 60, 0), "out_cubic")])
+    return [idle, mv, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

@@ -38,6 +38,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.21, 0.60, 0.11))
     r.add("arm_R", "spine", (-0.18, 0.78, 0.07))
     r.add("hand_R", "arm_R", (-0.215, 0.60, 0.14))
+    r.add("weapon", "hand_R", (-0.17, 0.45, 0.20))        # the cleaver (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (-0.16, 0.51, 0.11))
     r.socket("socket_cast", "head", (0, 0.88, 0.22))
     r.socket("socket_impact", "body", (-0.02, 0.50, 0.55))
@@ -366,33 +367,33 @@ def cleaver(p: Piece):
     blade = g.extrude(poly, 0.026, 0.0065, 1).translated(0, 0, 0)
     M = frame_xf(GUARD, d, n_up)
     blade_w = blade.transformed(M)
-    p.add("cleaver_blade", blade_w, "RH_Ice", "hand_R", lod1="keep", occluder=False)
+    p.add("cleaver_blade", blade_w, "RH_Ice", "weapon", lod1="keep", occluder=False)
     # inner frozen core (frosty slab visible through the translucent ice) + crack lines
     core_poly = np.array([(0.04, 0.0), (0.14, 0.03), (0.24, 0.06), (0.30, 0.07), (0.31, 0.03), (0.22, 0.0), (0.12, -0.012)])
     core = g.extrude(core_poly, 0.010, 0.002, 1).transformed(M)
-    p.add("cleaver_core", core, "RH_Frost", "hand_R", occluder=False, lod1=None)
+    p.add("cleaver_core", core, "RH_Frost", "weapon", occluder=False, lod1=None)
     # spine crystals along the back
     crystals = []
     for i, (u, ln) in enumerate(((0.07, 0.05), (0.16, 0.07), (0.25, 0.08), (0.31, 0.06))):
         pos = M[:3, :3] @ np.array([u, 0.06 + 0.07 * u, 0.0]) + GUARD
         dirv = unit(n_up + 0.3 * d * (i - 1.5) / 2)
         crystals.append((pos, dirv, ln, 0.0105))
-    p.add("cleaver_crystals", spikes(crystals, seed=50, flat=0.3, sides=4, tip=0.5), "RH_Ice", "hand_R")
+    p.add("cleaver_crystals", spikes(crystals, seed=50, flat=0.3, sides=4, tip=0.5), "RH_Ice", "weapon")
     # guard, handle (silver wire wrap), pommel
     guard = g.extrude(g.rect_poly(0.074, 0.030, 0.005, 1), 0.024, 0.005, 1)
     guard = guard.transformed(frame_xf(GUARD - d * 0.004, np.cross(d, n_up), d))
-    p.add("cleaver_guard", guard, "RH_Obsidian", "hand_R")
+    p.add("cleaver_guard", guard, "RH_Obsidian", "weapon")
     h_dir = unit(BUTT - GUARD)
     handle = g.tube([GUARD, BUTT], [0.0165, 0.0155], sides=7, samples=1, cap="flat", smooth=False, up=(0, 1, 0))
-    p.add("cleaver_handle", handle, "RH_Armour", "hand_R", uv_scale=2)
+    p.add("cleaver_handle", handle, "RH_Armour", "weapon", uv_scale=2)
     wraps = merge([g.torus(0.0175, 0.0034, 8, 3).aimed(h_dir, GUARD + (BUTT - GUARD) * u) for u in np.linspace(0.12, 0.88, 6)])
-    p.add("cleaver_wire", wraps, "RH_Silver", "hand_R", lod1=None)
+    p.add("cleaver_wire", wraps, "RH_Silver", "weapon", lod1=None)
     pommel = g.superellipsoid((0.022, 0.020, 0.022), 0.6, 0.7, 4, 9).aimed(h_dir, BUTT + h_dir * 0.012)
-    p.add("cleaver_pommel", pommel, "RH_Obsidian", "hand_R")
+    p.add("cleaver_pommel", pommel, "RH_Obsidian", "weapon")
 
 
 # ======================================================================================= clips
-def make_clips() -> list[Clip]:
+def make_clips(rig) -> list[Clip]:
     idle = Clip("Idle", 3.4, loop=True)
     idle.keys("spine", "rot", [(0, (0, 0, 0)), (1.0, (2.0, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
     idle.keys("head", "rot", [(0, (0, 0, 0)), (1.0, (-2, 0, 4), "in_out_cubic"), (2.2, (-1, -3, 1), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
@@ -447,13 +448,23 @@ def make_clips() -> list[Clip]:
     T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.30, (30, 0, 0), "in_out_cubic"), (0.62, (22, 0, 0), "in_cubic"), (1.0, (26, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
     T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.62, (-30, 0, 0), "in_cubic"), (1.0, (-30, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
     T.keys("top", "rot", [(0, (0, 0, 0)), (0.30, (10, 0, 0), "in_out_cubic"), (0.62, (-14, 0, 0), "in_cubic"), (0.9, (24, 0, 0), "out_quad"), (1.5, (0, 0, 0), "in_out_cubic")])
-    return [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.0)       # slumps, bows; the cleaver slips from his claws and clatters onto the plinth
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.7, (12, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0), "in_out_cubic")])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.7, (0, -0.03, 0.02), "in_out_cubic"), (2.0, (0, -0.035, 0.02))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.8, (16, 0, 0), "in_out_cubic"), (2.0, (18, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.8, (26, 0, 0), "in_out_cubic"), (2.0, (32, 0, 0), "in_out_cubic")])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.35, (-6, 0, 0), "in_out_cubic"), (0.9, (12, 0, 0), "in_out_cubic"), (2.0, (16, 0, 0), "in_out_cubic")])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.9, (10, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.8, (18, 0, 0), "in_out_cubic"), (2.0, (22, 0, 0))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.8, (20, 0, 0), "in_out_cubic"), (2.0, (16, 0, 0))])
+    rc.drop_weapon(S, rig, "weapon", 0.40, tuple(unit(TIP - GUARD)), 0.22, 0.03, (1.0, 0.0, 0.25), land_xz=(-0.05, 0.22))
+    return [idle, mv, A, hit, vic, T, S]
 
 
 # ======================================================================================= build
 def build(log=print):
     rig = make_rig()
-    p = Piece("rime", "pawn", rig, make_clips(), impact_time=0.95, strike_range=0.55, attack_style="melee", seed=5)
+    p = Piece("rime", "pawn", rig, make_clips(rig), impact_time=0.95, strike_range=0.55, attack_style="melee", seed=5)
     rc.pedestal_parts(p)
     legs(p)
     torso(p)

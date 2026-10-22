@@ -287,7 +287,13 @@ def make_clips() -> list[Clip]:
     T.keys("top", "rot", [(0, (0, 0, 0)), (0.35, (0, 18, 0), "out_cubic"), (0.64, (0, -10, 0), "in_expo"), (1.3, (0, 0, 0), "in_out_cubic")])
     T.keys("body", "pos", [(0, (0, 0, 0)), (0.25, (0, 0.05, 0), "out_quad"), (0.40, (0, 0.0, 0), "in_quad"), (0.64, (0, 0.02, 0), "out_quad"), (0.80, (0, 0, 0), "in_quad"), (1.3, (0, 0, 0))])
     T.keys("body", "rot", [(0, (0, 0, 0)), (0.25, (-5, 0, 0), "out_cubic"), (0.40, (3, 0, 0), "in_quad"), (0.64, (-3, 0, 2), "out_quad"), (1.3, (0, 0, 0), "in_out_cubic")])
-    return [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.0)       # the crown shards dim and droop, the tower sags and slumps forward
+    S.keys("top", "scale", [(0, (1, 1, 1)), (0.5, (0.9, 0.7, 0.9), "in_out_cubic"), (1.2, (0.7, 0.4, 0.7), "in_out_cubic"), (2.0, (0.62, 0.35, 0.62))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.9, (14, 0, 6), "in_out_cubic"), (2.0, (20, 0, 8))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.5, (-2, 0, 0), "in_out_cubic"), (1.2, (7, 0, 3), "in_out_cubic"), (2.0, (9, 0, 4))])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (1.2, (0, -0.04, 0.02), "in_out_cubic"), (2.0, (0, -0.05, 0.03))])
+    S.keys("body", "scale", [(0, (1, 1, 1)), (1.2, (1.03, 0.93, 1.03), "in_out_cubic"), (2.0, (1.04, 0.91, 1.04))])
+    return [idle, mv, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

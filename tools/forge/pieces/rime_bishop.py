@@ -34,6 +34,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.16, 0.82, 0.07))
     r.add("arm_R", "spine", (-0.13, 0.96, 0))
     r.add("hand_R", "arm_R", (-0.17, 0.82, 0.07))
+    r.add("weapon", "hand_R", (-0.19, 0.80, 0.12))        # the lantern staff (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", tuple(GRIP))
     r.socket("socket_cast", "top", tuple(LANT))
     r.socket("socket_impact", "body", (0, 0.70, 1.45))
@@ -277,34 +278,34 @@ STAFF = [(-0.19, 0.22, 0.12), (-0.19, 0.60, 0.12), (-0.20, 0.95, 0.11), (-0.21, 
 def staff(p: Piece):
     shaft = g.tube(STAFF, [0.020, 0.016, 0.015, 0.016, 0.014, 0.011, 0.008], sides=7, samples=3, cap="round", cap_steps=1, up=(1, 0, 0))
     shaft = shaft.noised(0.004, 12, 2, seed=6)
-    p.add("staff_shaft", shaft, "RH_Obsidian", "hand_R", uv_scale=2)
+    p.add("staff_shaft", shaft, "RH_Obsidian", "weapon", uv_scale=2)
     bands = []
     for y, r in ((0.50, 0.021), (0.80, 0.0185), (1.05, 0.0175), (1.28, 0.0170)):
         x = float(np.interp(y, [p[1] for p in STAFF], [p[0] for p in STAFF]))
         z = float(np.interp(y, [p[1] for p in STAFF], [p[2] for p in STAFF]))
         bands.append(g.lathe([(r + 0.002, y - 0.010), (r + 0.006, y - 0.006), (r + 0.006, y + 0.006), (r + 0.002, y + 0.010)], 10, crease=35).translated(x, 0, z))
-    p.add("staff_bands", merge(bands), "RH_Silver", "hand_R")
-    p.add("staff_foot", spikes([((-0.19, 0.235, 0.12), (0, -1, 0), 0.06, 0.014)], seed=2, flat=0.1, sides=5, tip=0.5), "RH_Ice", "hand_R")
-    p.add("staff_ice", cluster((-0.208, 0.98, 0.115), (-0.5, 0.8, 0.2), 4, (0.05, 0.11), (0.008, 0.014), spread=0.02, tilt=30, seed=12, flat=0.3), "RH_Ice", "hand_R")
-    p.add("staff_ice_low", cluster((-0.19, 0.42, 0.135), (0.0, 0.6, 1.0), 3, (0.04, 0.08), (0.008, 0.013), spread=0.02, tilt=30, seed=15, flat=0.3), "RH_Ice", "hand_R", lod1=None)
+    p.add("staff_bands", merge(bands), "RH_Silver", "weapon")
+    p.add("staff_foot", spikes([((-0.19, 0.235, 0.12), (0, -1, 0), 0.06, 0.014)], seed=2, flat=0.1, sides=5, tip=0.5), "RH_Ice", "weapon")
+    p.add("staff_ice", cluster((-0.208, 0.98, 0.115), (-0.5, 0.8, 0.2), 4, (0.05, 0.11), (0.008, 0.014), spread=0.02, tilt=30, seed=12, flat=0.3), "RH_Ice", "weapon")
+    p.add("staff_ice_low", cluster((-0.19, 0.42, 0.135), (0.0, 0.6, 1.0), 3, (0.04, 0.08), (0.008, 0.013), spread=0.02, tilt=30, seed=15, flat=0.3), "RH_Ice", "weapon", lod1=None)
     # lantern (hangs from the hook): chain, cap, cage bars, glass, light core, base
     hook = np.array([-0.13, 1.355, 0.19])
     chain = rc.zigzag(hook, (LANT[0], 1.305, LANT[2]), 5, 0.004, r=0.0034, side=(1, 0, 0), sides=3)
-    p.add("lantern_chain", chain, "RH_Silver", "hand_R", lod1=None)
+    p.add("lantern_chain", chain, "RH_Silver", "weapon", lod1=None)
     cap = g.lathe([(0.0, 1.30), (0.030, 1.285), (0.045, 1.272), (0.0, 1.272)], 8, crease=35).translated(LANT[0], 0, LANT[2])
     base = g.lathe([(0.0, 1.14), (0.035, 1.15), (0.02, 1.165), (0.0, 1.165)], 8, crease=35).translated(LANT[0], 0, LANT[2])
-    p.add("lantern_cap_base", merge([cap, base]), "RH_Silver", "hand_R")
+    p.add("lantern_cap_base", merge([cap, base]), "RH_Silver", "weapon")
     bars = []
     for k in range(4):
         a = math.radians(45 + k * 90)
         bars.append(g.tube([(LANT[0] + 0.040 * math.sin(a), 1.16, LANT[2] + 0.040 * math.cos(a)), (LANT[0] + 0.020 * math.sin(a), 1.285, LANT[2] + 0.020 * math.cos(a))],
                            0.0055, sides=4, samples=1, cap="round", cap_steps=1, smooth=False))
     rings_ = [g.torus(0.040, 0.0042, 10, 3).translated(LANT[0], 1.162, LANT[2]), g.torus(0.030, 0.0042, 10, 3).translated(LANT[0], 1.275, LANT[2])]
-    p.add("lantern_cage", merge(bars + rings_), "RH_Silver", "hand_R")
+    p.add("lantern_cage", merge(bars + rings_), "RH_Silver", "weapon")
     glass = g.superellipsoid((0.036, 0.062, 0.036), 0.6, 0.7, 4, 10).translated(*LANT)
-    p.add("lantern_glass", glass, "RH_Ice", "hand_R", occluder=False, lod1="keep")
+    p.add("lantern_glass", glass, "RH_Ice", "weapon", occluder=False, lod1="keep")
     core = g.superellipsoid((0.020, 0.035, 0.020), 0.9, 0.9, 4, 9).translated(*LANT)
-    p.add("lantern_core", core, "RH_Glow", "hand_R", bake=False, lod1="keep")
+    p.add("lantern_core", core, "RH_Glow", "weapon", bake=False, lod1="keep")
 
 
 # ======================================================================================= orbit runes (top bone)
@@ -394,11 +395,22 @@ def make_clips(rig) -> list[Clip]:
     T.keys("spine", "rot", [(0, (0, 0, 0)), (0.35, (-6, 0, 0), "in_out_cubic"), (0.95, (8, -8, 0), "in_cubic"), (1.25, (8, -8, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
     T.keys("head", "rot", [(0, (0, 0, 0)), (0.35, (-8, 0, 0), "in_out_cubic"), (0.95, (6, -10, 0), "in_cubic"), (1.25, (6, -10, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
     T.keys("body", "pos", [(0, (0, 0, 0)), (0.95, (0, 0, 0.05), "in_out_cubic"), (1.25, (0, 0, 0.05)), (1.5, (0, 0, 0), "in_out_cubic")])
-    clips = [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.2)       # the caster bows; the staff slips away and clatters down, the runes drop with the lantern and dim
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.9, (20, 0, 0), "in_out_cubic"), (2.2, (24, 0, 0))])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (30, 0, 0), "in_out_cubic"), (2.2, (36, 0, 0))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.9, (6, 0, 0), "in_out_cubic"), (2.2, (7, 0, 0))])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.9, (0, -0.02, 0.02), "in_out_cubic"), (2.2, (0, -0.025, 0.02))])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.5, (-8, 0, 0), "in_out_cubic"), (1.1, (10, 0, 0), "in_out_cubic"), (2.2, (14, 0, 0))])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.1, (8, 0, 0), "in_out_cubic"), (2.2, (10, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.9, (14, 0, 0), "in_out_cubic"), (2.2, (18, 0, 0))])
+    S.keys("top", "scale", [(0, (1, 1, 1)), (0.7, (1, 1, 1)), (1.4, (0.55, 0.55, 0.55), "in_out_cubic"), (2.2, (0.45, 0.45, 0.45))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.45, (0, 90, 0), "in_quad"), (2.2, (0, 200, 0), "out_cubic")])
+    rc.drop_weapon(S, rig, "weapon", 0.45, (0, 1, 0), 0.22, 0.03, (1.0, 0.0, -0.35), land_xz=(-0.02, 0.05))
+    clips = [idle, mv, A, hit, vic, T, S]
     # the rune ring (bone `top`, child of the spine) must follow the lantern that the right arm carries
     for c in clips:
-        ts = sorted(set(np.round(np.linspace(0, c.duration, int(c.duration * 12) + 1), 3)) | {k[0] for tr in c.tracks.values() for k in tr.keys if tr.bone in ("arm_R", "hand_R", "spine", "body")})
-        rc.follow_keys(rig, c, "top", "spine", lambda W: rc.fk_point(rig, W, "hand_R", LANT), [t for t in ts if 0 <= t <= c.duration])
+        ts = sorted(set(np.round(np.linspace(0, c.duration, int(c.duration * 30) + 1), 3)) | {k[0] for tr in c.tracks.values() for k in tr.keys if tr.bone in ("arm_R", "hand_R", "spine", "body", "weapon")})
+        rc.follow_keys(rig, c, "top", "spine", lambda W: rc.fk_point(rig, W, "weapon", LANT), [t for t in ts if 0 <= t <= c.duration])
     return clips
 
 

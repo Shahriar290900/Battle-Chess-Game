@@ -385,14 +385,27 @@ def make_clips() -> list[Clip]:
     sm(vic, [(0, 0), (2.0, 0)])
     T = Clip("Taunt", 1.6)           # halo flares, then a slow beckoning gesture with the free hand
     sm(T, [(0, 0), (1.6, 0)])
-    T.keys("top", "scale", [(0, (1, 1, 1)), (0.40, (1.30, 1.30, 1.30), "out_back"), (0.80, (1.12, 1.12, 1.12), "in_out_cubic"), (1.6, (1, 1, 1), "in_out_cubic")])
+    T.keys("top", "scale", [(0, (1, 1, 1)), (0.40, (1.50, 1.50, 1.50), "out_back"), (0.80, (1.22, 1.22, 1.22), "in_out_cubic"), (1.6, (1, 1, 1), "in_out_cubic")])
     T.keys("top", "rot", [(0, (0, 0, 0)), (0.40, (-6, 20, 0), "out_cubic"), (1.6, (0, 0, 0), "in_out_cubic")])
-    T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.45, (0, 0, 0)), (0.80, (-72, 0, 14), "out_cubic"), (1.30, (-72, 0, 14)), (1.6, (0, 0, 0), "in_out_cubic")])
-    T.keys("hand_L", "rot", [(0, (0, 0, 0)), (0.80, (-10, 0, 0), "out_cubic"), (0.95, (-42, 0, 0), "in_out_quad"), (1.10, (0, 0, 0), "in_out_quad"), (1.25, (-42, 0, 0), "in_out_quad"), (1.40, (-10, 0, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
+    T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.45, (0, 0, 0)), (0.80, (-98, 0, 22), "out_cubic"), (1.30, (-98, 0, 22)), (1.6, (0, 0, 0), "in_out_cubic")])
+    T.keys("hand_L", "rot", [(0, (0, 0, 0)), (0.80, (-10, 0, 0), "out_cubic"), (0.95, (-60, 0, 0), "in_out_quad"), (1.10, (10, 0, 0), "in_out_quad"), (1.25, (-60, 0, 0), "in_out_quad"), (1.40, (-10, 0, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("head", "rot", [(0, (0, 0, 0)), (0.80, (-4, -6, 6), "in_out_cubic"), (1.30, (-4, -6, 6)), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("spine", "rot", [(0, (0, 0, 0)), (0.80, (-3, -8, 0), "in_out_cubic"), (1.30, (-3, -8, 0)), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("body", "pos", [(0, (0, 0, 0)), (0.40, (0, 0.03, 0), "out_cubic"), (1.6, (0, 0, 0), "in_out_cubic")])
-    return [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.2)       # hands lowered, the halo dims and sinks, a deep bow; no weapon is held
+    sm(S, [(0, 0), (2.2, 0)])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.9, (22, 0, 0), "in_out_cubic"), (2.2, (26, 0, 0))])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (32, 0, 0), "in_out_cubic"), (2.2, (38, 0, 0))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.9, (6, 0, 0), "in_out_cubic"), (2.2, (7, 0, 0))])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.9, (0, -0.03, 0.03), "in_out_cubic"), (2.2, (0, -0.035, 0.03))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.7, (14, 0, 6), "in_out_cubic"), (2.2, (20, 0, 8))])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.7, (14, 0, -6), "in_out_cubic"), (2.2, (20, 0, -8))])
+    S.keys("hand_L", "rot", [(0, (0, 0, 0)), (1.0, (18, 0, 0), "in_out_cubic"), (2.2, (24, 0, 0))])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.0, (18, 0, 0), "in_out_cubic"), (2.2, (24, 0, 0))])
+    S.keys("top", "scale", [(0, (1, 1, 1)), (0.5, (1.08, 1.08, 1.08), "out_cubic"), (1.5, (0.62, 0.62, 0.62), "in_out_cubic"), (2.2, (0.55, 0.55, 0.55))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (1.2, (18, 0, 0), "in_out_cubic"), (2.2, (24, 0, 0))])
+    S.keys("top", "pos", [(0, (0, 0, 0)), (1.2, (0, -0.05, 0.02), "in_out_cubic"), (2.2, (0, -0.07, 0.03))])
+    return [idle, mv, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

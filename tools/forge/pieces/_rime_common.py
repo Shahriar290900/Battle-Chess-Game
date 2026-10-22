@@ -309,3 +309,124 @@ def follow_keys(rig, clip, bone, parent, world_fn, times, parent_rest_ok=True):
         Pm = W[parent]
         loc = (np.linalg.inv(Pm) @ np.append(T, 1.0))[:3]
         clip.key(bone, "pos", float(t), tuple(loc - rest_local), "linear")
+
+
+# ---- weapon drop (ballistic fall + bounces), shared logic with the Emberhold set; the world-matrix helper is local
+def _bone_world(rig, clip, bone, t):
+    chain, b = [], bone
+    while b:
+        chain.append(b)
+        b = rig.bones[b].parent
+    M = np.eye(4)
+    for b in reversed(chain):
+        loc = rig.local(b).copy()
+        tr = clip.tracks.get((b, "pos"))
+        if tr:
+            loc = loc + tr.eval(t, clip.duration, (0, 0, 0))
+        rot = (0, 0, 0)
+        tr = clip.tracks.get((b, "rot"))
+        if tr:
+            rot = tr.eval(t, clip.duration, (0, 0, 0))
+        L = np.eye(4)
+        L[:3, :3] = g.rot_matrix(*rot)
+        L[:3, 3] = loc
+        M = M @ L
+    return M
+
+
+
+def _mat_to_euler(R):
+    ry = -math.asin(max(-1.0, min(1.0, R[2, 0])))
+    if abs(math.cos(ry)) < 1e-6:
+        return (0.0, math.degrees(ry), math.degrees(math.atan2(-R[0, 1], R[1, 1])))
+    return (math.degrees(math.atan2(R[2, 1], R[2, 2])), math.degrees(ry), math.degrees(math.atan2(R[1, 0], R[0, 0])))
+
+
+
+def drop_weapon(clip, rig, bone, t0, axis_local, floor_y, rest_y_off, heading, land_xz=None, grav=9.8, restitution=0.34, bounces=2,
+                roll_deg=180.0, kick=(0.0, 0.0, 0.0), step=1 / 30):
+    """Release `bone` (pivot = its centre of mass) from its hand at t0.  The centre falls under gravity to `floor_y + rest_y_off`,
+    bounces `bounces` times, and the long axis (`axis_local`, rest-frame direction) swings to the horizontal `heading`.
+    Call after all other tracks of the clip are final.  Holds the final pose to the end of the clip."""
+    parent = rig.bones[bone].parent
+    p0 = rig.pos(bone)
+    rest_local = rig.local(bone)
+    Mp0 = _bone_world(rig, clip, parent, t0)
+    Lrest = np.eye(4)
+    Lrest[:3, 3] = rest_local
+    W0 = Mp0 @ Lrest
+    R0, pa = W0[:3, :3], W0[:3, 3]
+    a0 = R0 @ np.asarray(axis_local, float)
+    d_h = np.asarray(heading, float)
+    d_h = d_h / np.linalg.norm(d_h)
+    R_align = g.rot_between(a0, d_h)
+    Rf_total = R_align                                  # world rotation applied on top of R0
+    # axis / angle of the alignment rotation
+    ang = math.acos(max(-1.0, min(1.0, (np.trace(Rf_total) - 1) / 2)))
+    if ang < 1e-4:
+        ax = np.array([0.0, 1.0, 0.0])
+    else:
+        ax = np.array([Rf_total[2, 1] - Rf_total[1, 2], Rf_total[0, 2] - Rf_total[2, 0], Rf_total[1, 0] - Rf_total[0, 1]]) / (2 * math.sin(ang))
+    yf = floor_y + rest_y_off
+    pf = np.array([pa[0], yf, pa[2]]) if land_xz is None else np.array([land_xz[0], yf, land_xz[1]])
+    # time line: free fall, then bounces
+    h = max(pa[1] - yf, 0.02)
+    t_fall = math.sqrt(2 * h / grav)
+    v = grav * t_fall
+    impacts = [t0 + t_fall]
+    arcs = []                                           # (t_start, t_end, v0) of each bounce arc
+    for k in range(bounces):
+        vb = v * restitution ** (k + 1)
+        dur = 2 * vb / grav
+        arcs.append((impacts[-1], impacts[-1] + dur, vb))
+        impacts.append(impacts[-1] + dur)
+    t_land = impacts[-1]
+    n = int(round(clip.duration / step))
+    s_at_impact = [0.78, 0.94, 1.0, 1.0][: len(impacts)]
+
+    def smooth(u):
+        u = min(max(u, 0.0), 1.0)
+        return u * u * (3 - 2 * u)
+
+    def state(t):
+        if t <= t0:
+            return pa, 0.0
+        if t < impacts[0]:
+            tt = t - t0
+            y = pa[1] - 0.5 * grav * tt * tt
+            u = (t - t0) / max(impacts[0] - t0, 1e-6)
+            s = s_at_impact[0] * (u ** 1.4)
+            frac = u * 0.8
+        else:
+            y, s, frac = yf, 1.0, 1.0
+            for k, (ta, tb, vb) in enumerate(arcs):
+                if ta <= t < tb:
+                    tt = t - ta
+                    y = yf + vb * tt - 0.5 * grav * tt * tt
+                    u = (t - ta) / max(tb - ta, 1e-6)
+                    s = s_at_impact[k] + (s_at_impact[k + 1] - s_at_impact[k]) * smooth(u)
+                    frac = min(1.0, (t - t0) / max(t_land - t0, 1e-6) * 0.9 + 0.1)
+                    break
+            if t >= t_land:
+                s, frac = 1.0, 1.0
+        horiz = min(1.0, (t - t0) / max(t_land - t0, 1e-6))
+        horiz = horiz * (2 - horiz)
+        pos = np.array([pa[0] + (pf[0] - pa[0]) * horiz + kick[0] * (t - t0), y, pa[2] + (pf[2] - pa[2]) * horiz + kick[2] * (t - t0)])
+        return pos, s
+
+    for i in range(n + 1):
+        t = min(i * step, clip.duration)
+        pos, s = state(t)
+        Rt = g.axis_angle(ax, math.degrees(ang) * s) @ R0
+        if roll_deg:
+            Rt = g.axis_angle(d_h if s > 0 else a0, roll_deg * s * (1 - 0.0)) @ Rt if s > 0 else Rt
+        Wt = np.eye(4)
+        Wt[:3, :3] = Rt
+        Wt[:3, 3] = pos
+        if t <= t0:
+            Wt = Mp0 @ Lrest if False else _bone_world(rig, clip, parent, t) @ Lrest
+        Mp = _bone_world(rig, clip, parent, t)
+        L = np.linalg.inv(Mp) @ Wt
+        clip.key(bone, "pos", t, tuple(L[:3, 3] - rest_local), "linear")
+        clip.key(bone, "rot", t, _mat_to_euler(L[:3, :3]), "linear")
+

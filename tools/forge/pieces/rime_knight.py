@@ -35,6 +35,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.105, 0.90, -0.01))
     r.add("arm_R", "spine", (-0.095, 0.98, -0.05))
     r.add("hand_R", "arm_R", (-0.11, 0.90, 0.0))
+    r.add("weapon", "hand_R", (-0.17, 0.95, 0.02))        # the glaive (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (-0.17, 1.28, 0.20))
     r.socket("socket_cast", "mount_body", (0, 0.60, 0.0))
     r.socket("socket_impact", "body", (-0.08, 0.72, 0.60))
@@ -302,17 +303,17 @@ def rider(p: Piece):
     p.add("r_cloak_frost", cluster((0.04, 0.70, -0.105), (0, -1, -0.3), 3, (0.025, 0.045), (0.007, 0.010), spread=0.05, tilt=30, seed=3, flat=0.3, sides=4), "RH_Frost", "head", bone2="top", blend=(0.95, 0.70), lod1=None)
     # hooked glaive standing at the rider's right: haft with silver wraps, ice blade with a back spike
     haft = g.tube([(-0.17, 0.60, 0.01), (-0.17, 0.95, 0.02), (-0.17, 1.20, 0.02)], [0.015, 0.013, 0.012], sides=6, samples=3, cap="round", cap_steps=1, up=(1, 0, 0))
-    p.add("r_glaive_haft", haft, "RH_Obsidian", "hand_R", uv_scale=2)
-    p.add("r_glaive_wraps", merge([g.torus(0.0165, 0.0034, 8, 3).translated(-0.17, y, 0.012 + 0.01 * (y - 0.6)) for y in (0.70, 0.78, 0.92, 0.98, 1.08)]), "RH_Silver", "hand_R", lod1=None, tint=lambda P: np.full(len(P), 0.6))
+    p.add("r_glaive_haft", haft, "RH_Obsidian", "weapon", uv_scale=2)
+    p.add("r_glaive_wraps", merge([g.torus(0.0165, 0.0034, 8, 3).translated(-0.17, y, 0.012 + 0.01 * (y - 0.6)) for y in (0.70, 0.78, 0.92, 0.98, 1.08)]), "RH_Silver", "weapon", lod1=None, tint=lambda P: np.full(len(P), 0.6))
     blade = g.extrude_plane(np.array([(1.15, 0.015), (1.20, 0.06), (1.26, 0.16), (1.30, 0.24), (1.27, 0.20), (1.22, 0.12), (1.18, 0.08), (1.17, 0.02)]), 0.020, "YZ", bevel=0.004, bevel_segments=1).translated(-0.17, 0, 0)
-    p.add("r_glaive_blade", blade, "RH_Ice", "hand_R", occluder=False)
-    p.add("r_glaive_spike", spikes([((-0.17, 1.19, 0.0), (0, 0.5, -1.0), 0.07, 0.011)], seed=3, flat=0.3, sides=5), "RH_Ice", "hand_R")
-    p.add("r_glaive_collar", g.lathe([(0.013, 1.12), (0.022, 1.13), (0.022, 1.15), (0.013, 1.16)], 8, crease=35).translated(-0.17, 0, 0.02), "RH_Silver", "hand_R", tint=lambda P: np.full(len(P), 0.7))
-    p.add("r_glaive_butt", spikes([((-0.17, 0.605, 0.01), (0, -1, 0), 0.06, 0.012)], seed=2, flat=0.1, sides=5), "RH_Ice", "hand_R")
+    p.add("r_glaive_blade", blade, "RH_Ice", "weapon", occluder=False)
+    p.add("r_glaive_spike", spikes([((-0.17, 1.19, 0.0), (0, 0.5, -1.0), 0.07, 0.011)], seed=3, flat=0.3, sides=5), "RH_Ice", "weapon")
+    p.add("r_glaive_collar", g.lathe([(0.013, 1.12), (0.022, 1.13), (0.022, 1.15), (0.013, 1.16)], 8, crease=35).translated(-0.17, 0, 0.02), "RH_Silver", "weapon", tint=lambda P: np.full(len(P), 0.7))
+    p.add("r_glaive_butt", spikes([((-0.17, 0.605, 0.01), (0, -1, 0), 0.06, 0.012)], seed=2, flat=0.1, sides=5), "RH_Ice", "weapon")
 
 
 # ======================================================================================= clips
-def make_clips() -> list[Clip]:
+def make_clips(rig) -> list[Clip]:
     idle = Clip("Idle", 3.4, loop=True)
     idle.keys("mount_head", "rot", [(0, (0, 0, 0)), (1.1, (4, -5, 0), "in_out_cubic"), (2.3, (-1, 3, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
     idle.keys("top", "rot", [(0, (0, 0, 0)), (1.1, (6, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
@@ -367,13 +368,24 @@ def make_clips() -> list[Clip]:
     T.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.70, (-20, 0, 0), "in_out_cubic"), (1.0, (30, 0, 0), "in_cubic"), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("head", "rot", [(0, (0, 0, 0)), (0.45, (-8, 0, 0), "out_cubic"), (1.0, (8, 12, 0), "in_cubic"), (1.6, (0, 0, 0), "in_out_cubic")])
     T.keys("top", "rot", [(0, (0, 0, 0)), (0.45, (14, 0, 0), "out_cubic"), (1.0, (-8, 0, 0), "in_cubic"), (1.6, (0, 0, 0), "in_out_cubic")])
-    return [idle, mv, A, hit, vic, T]
+    S = Clip("Surrender", 2.2)       # the ram lowers its horns, the rider slumps; the glaive falls, bounces and settles beside the ram
+    S.keys("mount_body", "rot", [(0, (0, 0, 0)), (0.8, (4, 0, 0), "in_out_cubic"), (2.2, (5, 0, 0))])
+    S.keys("mount_body", "pos", [(0, (0, 0, 0)), (0.8, (0, -0.02, 0.0), "in_out_cubic"), (2.2, (0, -0.025, 0))])
+    S.keys("mount_head", "rot", [(0, (0, 0, 0)), (0.9, (34, 0, 0), "in_out_cubic"), (2.2, (40, 0, 0))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.9, (18, 0, 0), "in_out_cubic"), (2.2, (22, 0, 0))])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (30, 0, 0), "in_out_cubic"), (2.2, (36, 0, 0))])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.5, (-8, 0, 0), "in_out_cubic"), (1.1, (14, 0, 0), "in_out_cubic"), (2.2, (18, 0, 0))])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.1, (8, 0, 0), "in_out_cubic"), (2.2, (10, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.9, (14, 0, 0), "in_out_cubic"), (2.2, (18, 0, 0))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.9, (16, 0, 0), "in_out_cubic"), (2.2, (12, 0, 0))])
+    rc.drop_weapon(S, rig, "weapon", 0.45, (0, 1, 0), 0.22, 0.02, (0.1, 0.0, 1.0), land_xz=(-0.23, 0.0))
+    return [idle, mv, A, hit, vic, T, S]
 
 
 # ======================================================================================= build
 def build(log=print):
     rig = make_rig()
-    p = Piece("rime", "knight", rig, make_clips(), impact_time=1.00, strike_range=0.50, attack_style="leap", seed=10)
+    p = Piece("rime", "knight", rig, make_clips(rig), impact_time=1.00, strike_range=0.50, attack_style="leap", seed=10)
     rc.pedestal_parts(p)
     mount_body(p)
     mount_head(p)
