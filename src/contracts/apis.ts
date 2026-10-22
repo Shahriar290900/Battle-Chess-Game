@@ -14,12 +14,39 @@ export type CaptureMode = 'full' | 'quick' | 'off';
 export type QualityTier = 'high' | 'medium' | 'low';
 export type AiLevel = 'easy' | 'medium' | 'hard' | 'master';
 
+/** Fine-grained graphics options (settings → Graphics). Quality presets fill these; any edit makes preset 'custom'. */
+export interface GraphicsSettings {
+  preset: QualityTier | 'custom';
+  /** Render scale applied on top of a capped devicePixelRatio, 0.5–1. */
+  resolutionScale: number;
+  shadows: 'off' | 'low' | 'high';
+  bloom: boolean;
+  /** SMAA. */
+  antialias: boolean;
+  particles: 'low' | 'medium' | 'high';
+  /** simple: debris vs floor only; full: debris collides with pieces, each other, and nudges bystanders. */
+  physics: 'simple' | 'full';
+  /** Motes, flickering braziers, fog. */
+  ambient: boolean;
+  /** Kinematics layer: spring bones, look-at, lean, knockback wobble. */
+  secondaryMotion: boolean;
+  showFps: boolean;
+}
+
+export const GRAPHICS_PRESETS: Record<QualityTier, GraphicsSettings> = {
+  high: { preset: 'high', resolutionScale: 1, shadows: 'high', bloom: true, antialias: true, particles: 'high', physics: 'full', ambient: true, secondaryMotion: true, showFps: false },
+  medium: { preset: 'medium', resolutionScale: 1, shadows: 'low', bloom: true, antialias: false, particles: 'medium', physics: 'full', ambient: true, secondaryMotion: true, showFps: false },
+  low: { preset: 'low', resolutionScale: 0.75, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false },
+};
+
 export interface Settings {
   cameraMode: CameraMode;
   captureMode: CaptureMode;
   /** Global animation speed multiplier, 0.5–2. */
   animSpeed: number;
   quality: QualityTier | 'auto';
+  /** Detailed graphics options; preset follows `quality` unless the user customises. */
+  graphics: GraphicsSettings;
   musicEnabled: boolean;
   musicVolume: number; // 0–1
   sfxVolume: number; // 0–1
@@ -31,7 +58,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  cameraMode: 'follow', captureMode: 'full', animSpeed: 1, quality: 'auto',
+  cameraMode: 'follow', captureMode: 'full', animSpeed: 1, quality: 'auto', graphics: { ...GRAPHICS_PRESETS.medium },
   musicEnabled: true, musicVolume: 0.55, sfxVolume: 0.8, colorBlind: false,
   showMoveList: true, aiLevel: 'medium', playerSide: 'w',
 };
@@ -164,6 +191,10 @@ export interface ShatterOptions {
 export interface FxApi {
   init(scene: Scene, renderer: WebGLRenderer, camera: PerspectiveCamera): Promise<void>;
   setQuality(tier: QualityTier): void;
+  /** Apply particles/physics options (called after setQuality and on every graphics change). */
+  setGraphics(g: GraphicsSettings): void;
+  /** Register standing pieces as kinematic colliders so debris bounces off them (physics 'full'). */
+  setStaticActors(actors: PieceActor[]): void;
   emit(preset: ParticlePreset, position: Vector3, opts?: EmitOptions): void;
   shatter(opts: ShatterOptions): Promise<void>;
   shockwave(position: Vector3, faction: Faction, radius?: number): void;
@@ -191,11 +222,26 @@ export interface PostPipeline {
   render(dt: number): void;
   setSize(width: number, height: number): void;
   setQuality(tier: QualityTier): void;
+  /** Apply bloom/antialias/resolutionScale. */
+  setGraphics(g: GraphicsSettings): void;
   bloomPulse(strength: number, duration: number): void;
 }
 
 /** Factory signature implemented by src/render/post.ts (vfx-shaders). */
 export type CreatePost = (renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera, tier: QualityTier) => PostPipeline;
+
+// ---------------------------------------------------------------- kinematics
+/** Procedural animation layer on top of clips (src/kinematics). Never moves actor.root position. */
+export interface KinematicsApi {
+  attach(actor: PieceActor): void;
+  detach(actor: PieceActor): void;
+  /** Head/spine (or whole model yaw for non-humanoids) turn toward a world point; null releases. weight 0–1. */
+  lookAt(actor: PieceActor, target: Vector3 | null, weight?: number): void;
+  /** Radial shove: nearby actors lean/wobble away on damped springs (impacts, slams, landings). */
+  impulse(origin: Vector3, strength: number, radius?: number): void;
+  setEnabled(on: boolean): void;
+  update(dt: number): void;
+}
 
 // ---------------------------------------------------------------- sequences
 export interface SequenceContext {
@@ -206,7 +252,18 @@ export interface SequenceContext {
   registry: AssetRegistry;
   bus: EventBus;
   settings: Readonly<Settings>;
+  /** Optional procedural animation layer (look-at, knockback). */
+  kinematics?: KinematicsApi;
 }
+
+/** Attract mode / launch cinematic (src/cinematics): camera flyover of both armies with staged
+ *  background duels behind the main menu. Owns the board while running; stop() restores the start position. */
+export interface AttractMode {
+  start(): void;
+  stop(): Promise<void>;
+  readonly running: boolean;
+}
+export type AttractContext = Omit<SequenceContext, 'move'> & { sequences: SequencePlayer };
 
 /** Implemented by src/cinematics (cinematics agent). Every method resolves with the board in its final state. */
 export interface SequencePlayer {
@@ -216,6 +273,7 @@ export interface SequencePlayer {
   castle(ctx: SequenceContext): Promise<void>;
   /** Pawn already on the last rank (after move/capture sequence) → promoted actor revealed. */
   promote(ctx: SequenceContext, role: PromotionRole): Promise<void>;
+  /** Check: the checking piece (ctx.move.to) provokes the king (Taunt clip or procedural taunt) + aura. */
   check(ctx: SequenceContext, kingSquare: Square): Promise<void>;
   checkmate(ctx: SequenceContext, kingSquare: Square): Promise<void>;
   stalemate(ctx: SequenceContext): Promise<void>;

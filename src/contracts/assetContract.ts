@@ -15,8 +15,11 @@ export const ALL_ASSET_IDS: AssetId[] = FACTIONS.flatMap((f) => ROLES.map((r) =>
 export const modelUrl = (id: AssetId) => `models/${id}.glb`;
 export const fragmentsUrl = (id: AssetId) => `models/${id}_fragments.glb`;
 
+/** Required clips (validator-enforced). */
 export const CLIPS = ['Idle', 'Move', 'Attack', 'HitReact', 'Victory'] as const;
-export type ClipName = (typeof CLIPS)[number];
+/** Optional clips (contract v1.1). Taunt: provoke gesture toward the enemy king while giving check (1–1.6 s, once). */
+export const OPTIONAL_CLIPS = ['Taunt'] as const;
+export type ClipName = (typeof CLIPS)[number] | (typeof OPTIONAL_CLIPS)[number];
 export const LOOPING_CLIPS: readonly ClipName[] = ['Idle', 'Move'];
 
 export const BONES_REQUIRED = ['root', 'body', 'top'] as const;
