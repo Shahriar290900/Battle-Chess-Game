@@ -14,7 +14,7 @@ import { createSettingsStore } from './core/settings';
 import { createFx } from './fx';
 import { createPlatform } from './platform';
 import { createBoard } from './render/board';
-import { createLighting } from './render/lighting';
+import { createLighting, prewarmCinematicLights } from './render/lighting';
 import { createMarkers } from './render/markers';
 import { createGuardedPost } from './render/postGuard';
 import { createQuality } from './render/quality';
@@ -131,7 +131,7 @@ async function boot(): Promise<void> {
       fx.update(dt * ts);
       board.update(dt * ts);
       markers.update(time);
-      lighting.update(time);
+      lighting.update(time, rig.camera.position.z);
       rig.update(dt);
       post.render(dt);
     });
@@ -148,6 +148,8 @@ async function boot(): Promise<void> {
       benchmarking = true;
       try { await quality.resolve(); } finally { benchmarking = false; }
     }
+    // Compile shaders for the cinematic spotlight rig now so the first capture does not hitch.
+    prewarmCinematicLights(kit.scene, () => post.render(0));
     step('ready');
 
     // ---- debug / test hook

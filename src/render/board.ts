@@ -3,7 +3,7 @@
 // a round dais. Tiles are one 64-instance InstancedMesh (used for picking). Also implements BoardApi.
 import {
   AdditiveBlending, BoxGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedMesh, Matrix4,
-  Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Raycaster, Shape, Path, Vector3,
+  Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Raycaster, Shape, Path, Sprite, SpriteMaterial, TorusGeometry, Vector3,
   type Intersection, type Scene,
 } from 'three';
 import type { BoardApi, Faction, PieceActor, Role, Square } from '../contracts';
@@ -11,7 +11,7 @@ import { FILES, SIDE_FACTION, isLightSquare, squareToWorld, restYaw } from '../c
 import { parsePlacement } from '../core/rules';
 import type { AssetRegistryImpl } from '../assets/registry';
 import type { PieceActorImpl } from '../assets/pieceActor';
-import { FRAME_SIZE, makeFrameTexture, makeInlayTexture, makeStoneTexture, makeTileGlowTexture } from './boardTextures';
+import { FRAME_SIZE, makeFrameTexture, makeGlowTexture, makeInlayTexture, makeMarbleTexture, makeSlabTexture, makeTileGlowTexture } from './boardTextures';
 
 export interface BoardImpl extends BoardApi {
   readonly root: Group;
@@ -35,8 +35,9 @@ export interface BoardOptions {
   textureSize?: number;
 }
 
-const TILE_LIGHT_EMBER = new Color(0x6e5640), TILE_DARK_EMBER = new Color(0x1a120d);
-const TILE_LIGHT_RIME = new Color(0x435c74), TILE_DARK_RIME = new Color(0x09101a);
+// Bone marble / pale cool marble on light squares; basalt / blue slate on dark squares.
+const TILE_LIGHT_EMBER = new Color(0xb9a98c), TILE_DARK_EMBER = new Color(0x38332e);
+const TILE_LIGHT_RIME = new Color(0xaab7c0), TILE_DARK_RIME = new Color(0x26303b);
 
 const idx = (sq: Square) => (Number(sq[1]) - 1) * 8 + FILES.indexOf(sq[0]);
 const sqOfIndex = (i: number): Square => FILES[i % 8] + String(Math.floor(i / 8) + 1);
@@ -48,18 +49,36 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   root.name = 'board';
   scene.add(root);
 
-  // ---------- base slab under the tiles (bronze shows through the grout lines)
-  const slabMat = new MeshStandardMaterial({ color: 0x8a5d30, metalness: 0.85, roughness: 0.42 });
-  const slab = new Mesh(new BoxGeometry(8.1, 0.3, 8.1), slabMat);
-  slab.position.y = -0.11 - 0.15;
-  slab.receiveShadow = true;
-  root.add(slab);
+  // ---------- base: dark body + a metal grid plate (bronze → frosted silver) that shows through the tile gaps
+  const body = new Mesh(new BoxGeometry(8.1, 0.3, 8.1), new MeshStandardMaterial({ color: 0x14110e, roughness: 0.8, metalness: 0.2 }));
+  body.position.y = -0.1 - 0.15 - 0.02;
+  body.receiveShadow = true;
+  root.add(body);
+  const plate = new Mesh(
+    new PlaneGeometry(8.06, 8.06).rotateX(-Math.PI / 2),
+    new MeshStandardMaterial({ map: makeSlabTexture(256), metalness: 0.95, roughness: 0.28 }),
+  );
+  plate.position.y = -0.1;
+  plate.receiveShadow = true;
+  plate.raycast = () => undefined;
+  root.add(plate);
 
-  // ---------- tiles
-  const tileGeo = new BoxGeometry(0.975, 0.2, 0.975);
-  tileGeo.translate(0, -0.1, 0);
-  const stone = makeStoneTexture(256);
-  const tileMat = new MeshStandardMaterial({ map: stone, roughness: 0.55, metalness: 0.12 });
+  // ---------- tiles: bevelled stone slabs, one continuous marble texture sampled by world position
+  const TILE = 0.93, BEVEL = 0.025, DEPTH = 0.14;
+  const sq = new Shape();
+  sq.moveTo(-TILE / 2, -TILE / 2); sq.lineTo(TILE / 2, -TILE / 2); sq.lineTo(TILE / 2, TILE / 2); sq.lineTo(-TILE / 2, TILE / 2); sq.closePath();
+  const tileGeo = new ExtrudeGeometry(sq, { depth: DEPTH, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 1, curveSegments: 1 });
+  tileGeo.rotateX(-Math.PI / 2);
+  tileGeo.translate(0, -(DEPTH + BEVEL), 0); // top surface at y = 0
+  const tileMat = new MeshStandardMaterial({ map: makeMarbleTexture(Math.min(texSize, 2048)), roughness: 0.34, metalness: 0.06, envMapIntensity: 1.4 });
+  tileMat.onBeforeCompile = (shader) => {
+    // Sample the board-sized marble map by world x/z instead of per-tile UVs.
+    shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+#ifdef USE_MAP
+  vec4 bcWorld = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  vMapUv = vec2(bcWorld.x / 8.0 + 0.5, 0.5 - bcWorld.z / 8.0);
+#endif`);
+  };
   const tiles = new InstancedMesh(tileGeo, tileMat, 64);
   tiles.name = 'tiles';
   tiles.receiveShadow = true;
@@ -67,15 +86,16 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   const m4 = new Matrix4();
   const tmpC = new Color();
   for (let i = 0; i < 64; i++) {
-    const sq = sqOfIndex(i);
-    const p = squareToWorld(sq);
+    const sqn = sqOfIndex(i);
+    const p = squareToWorld(sqn);
     tiles.setMatrixAt(i, m4.makeTranslation(p.x, 0, p.z));
     const rank = Math.floor(i / 8);
     const t = Math.min(Math.max((rank - 1.5) / 4, 0), 1); // Emberhold → Rime transition across the middle ranks
-    const light = isLightSquare(sq);
+    const light = isLightSquare(sqn);
     const col = (light
       ? tmpC.copy(TILE_LIGHT_EMBER).lerp(TILE_LIGHT_RIME, t)
       : tmpC.copy(TILE_DARK_EMBER).lerp(TILE_DARK_RIME, t)).clone();
+    col.multiplyScalar(0.94 + ((i * 7919) % 13) / 13 * 0.12); // slight per-slab variation
     baseColors.push(col);
     tiles.setColorAt(i, col);
   }
@@ -83,13 +103,12 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   tiles.instanceColor!.needsUpdate = true;
   root.add(tiles);
 
-  // ---------- inlay overlay (transparent, glowing lines)
+  // ---------- inlay overlay (transparent): bronze rules near White, rime frost near Black
   const inlayTex = makeInlayTexture(texSize);
   const inlay = new Mesh(
     new PlaneGeometry(8, 8).rotateX(-Math.PI / 2),
     new MeshStandardMaterial({
-      map: inlayTex, transparent: true, depthWrite: false, roughness: 0.4, metalness: 0.7,
-      emissive: new Color(0xffffff), emissiveMap: inlayTex, emissiveIntensity: 0.28,
+      map: inlayTex, transparent: true, depthWrite: false, roughness: 0.45, metalness: 0.5,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }),
   );
@@ -127,13 +146,44 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   frameTex.repeat.set(1 / FRAME_SIZE, 1 / FRAME_SIZE);
   frameTex.offset.set(0.5, 0.5);
   const frame = new Mesh(frameGeo, [
-    new MeshStandardMaterial({ map: frameTex, roughness: 0.5, metalness: 0.35 }),
-    new MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.5, metalness: 0.7 }),
+    new MeshStandardMaterial({ map: frameTex, roughness: 0.5, metalness: 0.15 }),
+    new MeshStandardMaterial({ color: 0x24170e, roughness: 0.55, metalness: 0.3 }),
   ]);
   frame.castShadow = true;
   frame.receiveShadow = true;
   frame.raycast = () => undefined;
   root.add(frame);
+
+  // ---------- corner braziers: small bronze (Emberhold) / silver (Rime) cups with a low flame
+  const flames: Array<{ s: Sprite; base: number; phase: number }> = [];
+  {
+    const glowTex = makeGlowTexture(64);
+    const cupBronze = new MeshStandardMaterial({ color: 0x6a4a28, roughness: 0.4, metalness: 0.85 });
+    const cupSilver = new MeshStandardMaterial({ color: 0x6d7f8c, roughness: 0.35, metalness: 0.85 });
+    const cupGeo = new CylinderGeometry(0.14, 0.08, 0.15, 12);
+    const rimGeo = new TorusGeometry(0.14, 0.02, 6, 16).rotateX(Math.PI / 2);
+    for (const mx of [-1, 1]) for (const mz of [-1, 1]) {
+      const warm = mz > 0;
+      const g = new Group();
+      g.position.set(mx * 4.72, 0.09, mz * 4.72);
+      const cup = new Mesh(cupGeo, warm ? cupBronze : cupSilver);
+      cup.position.y = 0.075;
+      cup.castShadow = true;
+      const rim = new Mesh(rimGeo, warm ? cupBronze : cupSilver);
+      rim.position.y = 0.15;
+      const coal = new Mesh(new CylinderGeometry(0.11, 0.11, 0.02, 12), new MeshBasicMaterial({ color: warm ? 0xff7a1a : 0x6fd3ff }));
+      coal.position.y = 0.14;
+      g.add(cup, rim, coal);
+      for (const [size, y, op, ph] of [[0.28, 0.3, 0.9, 0], [0.55, 0.36, 0.22, 1.9]] as const) {
+        const sp = new Sprite(new SpriteMaterial({ map: glowTex, color: warm ? 0xff8a30 : 0x7fd8ff, transparent: true, opacity: op, blending: AdditiveBlending, depthWrite: false, fog: false }));
+        sp.scale.set(size, size * 1.3, 1);
+        sp.position.y = y;
+        g.add(sp);
+        flames.push({ s: sp, base: size, phase: ph + mx + mz * 2 });
+      }
+      root.add(g);
+    }
+  }
 
   // ---------- dais
   const daisMat = new MeshStandardMaterial({ color: 0x0e0b09, roughness: 0.8, metalness: 0.2 });
@@ -151,6 +201,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   const bySquare = new Map<Square, PieceActorImpl>();
   const actors = new Set<PieceActorImpl>();
   const tints = new Map<Square, number>();
+  let clock = 0;
 
   const board: BoardImpl = {
     scene, root, tiles,
@@ -266,7 +317,14 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       for (const a of actors) a.setLod(lod);
     },
 
-    update(dt) { for (const a of actors) a.update(dt); },
+    update(dt) {
+      for (const a of actors) a.update(dt);
+      clock += dt;
+      for (const f of flames) {
+        const k = 1 + Math.sin(clock * 9 + f.phase) * 0.12 + Math.sin(clock * 15 + f.phase * 2) * 0.06;
+        f.s.scale.set(f.base * (1 + (k - 1) * 0.5), f.base * 1.3 * k, 1);
+      }
+    },
   };
 
   return board;

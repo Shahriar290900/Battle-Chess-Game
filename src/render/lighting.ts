@@ -3,11 +3,11 @@
 // gradient sky dome that is ember-warm behind White and ice-cold behind Black.
 import {
   AdditiveBlending, BackSide, Color, CircleGeometry, CylinderGeometry, DirectionalLight, FogExp2, Group,
-  HemisphereLight, Mesh, MeshStandardMaterial, PMREMGenerator, PointLight, ShaderMaterial, SphereGeometry, Sprite, SpriteMaterial,
-  Float32BufferAttribute, type Scene, type WebGLRenderer,
+  HemisphereLight, Mesh, MeshStandardMaterial, Object3D, PMREMGenerator, PointLight, ShaderMaterial, SphereGeometry, SpotLight, Sprite, SpriteMaterial,
+  Float32BufferAttribute, BufferGeometry, BufferAttribute, Points, RepeatWrapping, type Scene, type WebGLRenderer,
 } from 'three';
 import type { QualityTier } from '../contracts';
-import { makeGlowTexture } from './boardTextures';
+import { makeFloorTexture, makeGlowTexture } from './boardTextures';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export interface Lighting {
@@ -18,7 +18,7 @@ export interface Lighting {
   /** Brazier point lights are skipped on the Low tier (emissive flames remain). */
   setTier(tier: QualityTier): void;
   /** Flicker the braziers (real seconds). */
-  update(time: number): void;
+  update(time: number, camZ?: number): void;
   dispose(): void;
 }
 
@@ -46,13 +46,35 @@ const SKY_FRAG = /* glsl */ `
     #include <colorspace_fragment>
   }`;
 
+/**
+ * Pre-warm shader programs for the cinematic light rig. Three.js keys programs on the light counts, so the first capture
+ * (which adds 3 SpotLights, no shadows) would compile every material mid-fight. Temporarily add 3 dormant spotlights with
+ * the same settings as src/cinematics/lightRig.ts, render one frame through the real pipeline, then remove them.
+ */
+export function prewarmCinematicLights(scene: Scene, renderFrame: () => void): void {
+  const group = new Group();
+  const aim = new Object3D();
+  group.add(aim);
+  for (const [color, angle, penumbra] of [[0xffb26b, 0.5, 0.85], [0xfff2e4, 1.0, 1], [0xa5dcff, 0.7, 0.9]] as const) {
+    const l = new SpotLight(color, 0, 0, angle, penumbra, 0);
+    l.castShadow = false;
+    l.target = aim;
+    group.add(l);
+  }
+  scene.add(group);
+  try { renderFrame(); } finally {
+    scene.remove(group);
+    group.children.forEach((c) => (c as SpotLight).dispose?.());
+  }
+}
+
 export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting {
   // IBL
   const pmrem = new PMREMGenerator(renderer);
   const env = new RoomEnvironment();
   const envRT = pmrem.fromScene(env, 0.04);
   scene.environment = envRT.texture;
-  scene.environmentIntensity = 0.16;
+  scene.environmentIntensity = 0.28;
   env.dispose();
   pmrem.dispose();
 
@@ -60,15 +82,15 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
   scene.fog = new FogExp2(0x06080c, 0.022);
 
   const key = new DirectionalLight(0xffb878, 3.4);
-  key.position.set(3.5, 11, 9);
+  key.position.set(5.5, 7.5, 8.5);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -7; key.shadow.camera.right = 7;
-  key.shadow.camera.top = 7; key.shadow.camera.bottom = -7;
-  key.shadow.camera.near = 2; key.shadow.camera.far = 30;
+  key.shadow.camera.left = -9; key.shadow.camera.right = 9;
+  key.shadow.camera.top = 9; key.shadow.camera.bottom = -9;
+  key.shadow.camera.near = 2; key.shadow.camera.far = 34;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
-  key.shadow.radius = 3;
+  key.shadow.radius = 5;
   scene.add(key, key.target);
 
   const rim = new DirectionalLight(0x6aa8ff, 1.9);
@@ -91,14 +113,19 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
   floorGeo.rotateX(-Math.PI / 2);
   const pos = floorGeo.getAttribute('position');
   const colors: number[] = [];
-  const warmC = new Color(0x120b07), coldC = new Color(0x080d14), c = new Color();
+  const warmC = new Color(0x5c4838), coldC = new Color(0x2a3a4c), c = new Color();
   for (let i = 0; i < pos.count; i++) {
     const t = Math.min(Math.max(pos.getZ(i) / 14 * 0.5 + 0.5, 0), 1);
-    c.copy(coldC).lerp(warmC, t);
+    const rr = Math.hypot(pos.getX(i), pos.getZ(i));
+    const fall = 1 - Math.min(Math.max((rr - 12) / 30, 0), 1);
+    c.copy(coldC).lerp(warmC, t).multiplyScalar(0.25 + 0.75 * fall * fall);
     colors.push(c.r, c.g, c.b);
   }
   floorGeo.setAttribute('color', new Float32BufferAttribute(colors, 3));
-  const floor = new Mesh(floorGeo, new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.05 }));
+  const floorTex = makeFloorTexture(1024);
+  floorTex.wrapS = floorTex.wrapT = RepeatWrapping;
+  floorTex.repeat.set(10, 10);
+  const floor = new Mesh(floorGeo, new MeshStandardMaterial({ map: floorTex, vertexColors: true, roughness: 0.78, metalness: 0.08 }));
   floor.position.y = -1.25;
   floor.receiveShadow = true;
   floor.name = 'floor';
@@ -147,15 +174,85 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
   brazier(-9.2, 3.4, true); brazier(9.2, 3.4, true);
   brazier(-9.2, -3.6, false); brazier(9.2, -3.6, false);
   scene.add(hall);
+  // ---- faint back-lights behind each side (cold behind the Rime ranks, warm behind Emberhold) and drifting motes
+  const haze = makeGlowTexture(128);
+  // Only the glows on the far side of the board (from the camera) are shown, so they never haze the near ranks.
+  const hazeSide: { cold: Array<{ m: SpriteMaterial; op: number }>; warm: Array<{ m: SpriteMaterial; op: number }> } = { cold: [], warm: [] };
+  for (const [x, y, z, w, h, col, op] of [
+    [-5.5, 0.5, -9, 6.5, 3.4, 0x4f8fd0, 0.12], [5.5, 0.5, -9, 6.5, 3.4, 0x4f8fd0, 0.12], [0, 1.0, -11, 10, 4, 0x6aa8e8, 0.08],
+    [-5.5, 0.5, 9, 6.5, 3.4, 0xe0782a, 0.14], [5.5, 0.5, 9, 6.5, 3.4, 0xe0782a, 0.14], [0, 1.0, 11, 10, 4, 0xf0903a, 0.1],
+  ] as const) {
+    const m = new SpriteMaterial({ map: haze, color: col, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, fog: false });
+    const sp = new Sprite(m);
+    sp.position.set(x, y, z);
+    sp.scale.set(w, h, 1);
+    hall.add(sp);
+    (z < 0 ? hazeSide.cold : hazeSide.warm).push({ m, op });
+  }
+  const MOTES = 260;
+  const moteGeo = new BufferGeometry();
+  {
+    const p = new Float32Array(MOTES * 3), a = new Float32Array(MOTES * 4), col = new Float32Array(MOTES * 3);
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < MOTES; i++) {
+      p[i * 3] = (rnd() - 0.5) * 18; p[i * 3 + 1] = rnd() * 6; p[i * 3 + 2] = (rnd() - 0.5) * 18;
+      a[i * 4] = 0.15 + rnd() * 0.3;       // rise speed
+      a[i * 4 + 1] = rnd() * 6.28;         // phase
+      a[i * 4 + 2] = 0.05 + rnd() * 0.07;  // size
+      a[i * 4 + 3] = 0.4 + rnd() * 0.6;    // brightness
+      const warm = p[i * 3 + 2] > 0;
+      col[i * 3] = warm ? 1.0 : 0.55; col[i * 3 + 1] = warm ? 0.55 : 0.8; col[i * 3 + 2] = warm ? 0.22 : 1.0;
+    }
+    moteGeo.setAttribute('position', new BufferAttribute(p, 3));
+    moteGeo.setAttribute('aData', new BufferAttribute(a, 4));
+    moteGeo.setAttribute('aColor', new BufferAttribute(col, 3));
+  }
+  const moteMat = new ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: /* glsl */ `
+      uniform float uTime; attribute vec4 aData; attribute vec3 aColor;
+      varying vec3 vCol; varying float vA;
+      void main() {
+        vec3 p = position;
+        p.y = mod(p.y + uTime * aData.x, 6.0) - 0.8;
+        p.x += sin(uTime * 0.35 + aData.y) * 0.45;
+        p.z += cos(uTime * 0.29 + aData.y * 1.3) * 0.45;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aData.z * 900.0 / -mv.z;
+        vA = aData.w * smoothstep(-0.8, 0.4, p.y) * smoothstep(5.2, 3.2, p.y) * (0.65 + 0.35 * sin(uTime * 1.7 + aData.y * 3.0));
+        vCol = aColor;
+      }`,
+    fragmentShader: /* glsl */ `
+      varying vec3 vCol; varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float a = smoothstep(1.0, 0.0, d) * vA * 0.7;
+        gl_FragColor = vec4(vCol, a);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false,
+  });
+  const motes = new Points(moteGeo, moteMat);
+  motes.frustumCulled = false;
+  motes.renderOrder = 5;
+  scene.add(motes);
   let lightsOn = true;
 
   return {
     key, rim,
     setTier(tier) {
+      motes.visible = tier !== 'low';
+      moteGeo.setDrawRange(0, tier === 'high' ? MOTES : 150);
       lightsOn = tier !== 'low';
       for (const l of lights) l.visible = lightsOn;
     },
-    update(time) {
+    update(time, camZ = 10) {
+      moteMat.uniforms.uTime.value = time;
+      const far = (sign: number) => Math.min(Math.max(sign * camZ / 6, 0), 1);
+      for (const h of hazeSide.cold) h.m.opacity = h.op * far(1);
+      for (const h of hazeSide.warm) h.m.opacity = h.op * far(-1);
       for (const f of flames) {
         const k = 1 + Math.sin(time * 9 + f.phase) * 0.12 + Math.sin(time * 17.3 + f.phase * 2) * 0.07;
         f.m.scale.set(f.w * (1 + (k - 1) * 0.4), f.base * k, 1);

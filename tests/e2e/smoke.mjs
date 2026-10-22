@@ -90,10 +90,22 @@ try {
     if (p.miss) log(`warning: no unoccluded point found for ${sq}`);
     await page.mouse.click(p.x, p.y);
   };
+  // The follow camera swings for ~1.4 s after each turn; wait until the board stops moving on screen.
+  const waitCameraStable = async () => {
+    let prev = null;
+    for (let i = 0; i < 40; i++) {
+      const p = await page.evaluate(() => window.__bc.squareToScreen('e4'));
+      if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < 5) return; // idle drift moves ~3 px per sample
+      prev = p;
+      await page.waitForTimeout(250);
+    }
+  };
   const play = async (from, to) => {
     const before = (await state()).plies;
+    await waitCameraStable();
     await click(from);
     await page.waitForTimeout(250);
+    await waitCameraStable();
     await click(to);
     await waitFor((s) => s.plies === before + 1, `${from}-${to} to be accepted`, 8000);
     log(`played ${from}${to}`);
@@ -164,6 +176,9 @@ try {
   await waitFor((s) => s.state === 'awaitInput', 'medium game to start');
   await page.waitForTimeout(2500);
   await page.screenshot({ path: join(shots, 'medium-game-1280x720.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: join(shots, 'medium-game-390x844.png') });
   log('medium tier =', await page.evaluate(() => window.__bc.quality.tier));
 
   if (errors.length) throw new Error(`console errors:\n  ${[...new Set(errors)].join('\n  ')}`);

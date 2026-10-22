@@ -6,9 +6,10 @@
 //   - Missing clips or sockets are contract errors: logged once, then replaced by procedural fallbacks.
 import { gsap } from 'gsap';
 import {
-  AnimationMixer, Color, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D,
+  AnimationMixer, Color, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D, PlaneGeometry,
   type AnimationAction, type AnimationClip, type Material,
 } from 'three';
+import { makeContactShadowTexture } from '../render/boardTextures';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { AssetId, ClipName, Faction, PieceActor, PieceExtras, Role, Side, SocketName, Square, Timeline } from '../contracts';
 import {
@@ -29,6 +30,8 @@ export interface PieceActorImpl extends PieceActor {
   resetPose(): void;
 }
 
+let blobGeo: PlaneGeometry | null = null;
+let blobTex: ReturnType<typeof makeContactShadowTexture> | null = null;
 const loggedErrors = new Set<string>();
 /** Contract violations are logged once per message and never throw: the game keeps running. */
 export function contractError(msg: string): void {
@@ -139,6 +142,21 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
   collider.position.y = h / 2;
   collider.userData.isCollider = true;
   root.add(collider);
+
+  // ---- soft contact shadow (cheap AO): a dark blob that stays on the board while the piece lifts or hops
+  let blob: Mesh | null = null;
+  if (typeof document !== 'undefined') {
+    blobGeo ??= new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    blobTex ??= makeContactShadowTexture(64);
+    blob = new Mesh(blobGeo, new MeshBasicMaterial({
+      map: blobTex, transparent: true, depthWrite: false, opacity: 0.8, fog: false,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    }));
+    blob.scale.set(1.15, 1, 1.15);
+    blob.renderOrder = 3;
+    blob.raycast = () => undefined;
+    root.add(blob);
+  }
 
   // ---- animation
   const mixer = new AnimationMixer(model);
@@ -293,7 +311,16 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
       summonNode.visible = scale > 0.001;
     },
 
-    update(dt) { if (!disposed) mixer.update(dt); },
+    update(dt) {
+      if (disposed) return;
+      mixer.update(dt);
+      if (blob) {
+        const lift = Math.max(root.position.y, 0);
+        blob.position.y = -root.position.y + 0.008;
+        (blob.material as MeshBasicMaterial).opacity = 0.8 * fade * (1 - Math.min(lift / 1.6, 1));
+        blob.visible = fade > 0.02;
+      }
+    },
 
     setLod,
 
@@ -315,6 +342,7 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
       mixer.uncacheRoot(model);
       root.parent?.remove(root);
       for (const s of matStates) s.mat.dispose();
+      (blob?.material as MeshBasicMaterial | undefined)?.dispose();
       collider.geometry.dispose();
       (collider.material as Material).dispose();
     },
