@@ -1,7 +1,8 @@
 import type { Vector3 } from 'three';
 import type { Faction, PieceActor, SequenceContext } from '../../contracts';
 import type { Stage } from '../stage';
-import type { ShotCue, ShotInputs } from '../shots';
+import type { PickOptions } from '../shotPicker';
+import type { Shot, ShotCue, ShotInputs, ShotName } from '../shots';
 import type { WarpPlan } from '../timeWarp';
 
 export type DecalKind = 'crack' | 'scorch' | 'frost';
@@ -48,6 +49,8 @@ export interface CaptureEnv {
   isEnPassant: boolean;
   seatZ: 1 | -1;
   inputs: ShotInputs;
+  /** Best of three candidate angles for a shot type (fewest occluders between camera and fighters). */
+  pickShot(name: ShotName, o?: PickOptions): Shot;
   /** Nest attacker.attackTimeline() so its impact lands at max(earliest + impact, desiredImpact). Emits attack:whoosh. */
   placeAttack(earliest: number, desiredImpact?: number): AttackPlacement;
   /** Slide the attacker from `from` onto `to` at `at`, face rest yaw, then play Victory once the Attack is done (capped). */

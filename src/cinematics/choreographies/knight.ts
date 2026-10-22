@@ -3,7 +3,6 @@
 // headbutts first (ice crack), then the rider's glaive finishes.
 import { Vector3 } from 'three';
 import { flatDir, lerp, smoothstep, socketObject } from '../common';
-import { trackingLeap } from '../shots';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 import { burstAt, shakeAt } from './util';
 
@@ -79,7 +78,7 @@ export const knight: Choreography = (e) => {
   const r = e.resolve(a.impactAt + 0.35, land, { after: a.end });
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd, end: r.end,
-    cues: [{ at: 0, shot: trackingLeap(e.inputs) }],
+    cues: [{ at: 0, shot: e.pickShot('trackingLeap', { attackerAt: land }) }],
     shatter: { magnitude: MAGNITUDE.knight }, trauma: TRAUMA.knight, hitStopMs: HIT_STOP_MS.knight, heavy: false,
   };
 };

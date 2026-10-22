@@ -99,14 +99,14 @@ describe('capture feel', () => {
     await drain();
   });
 
-  it('bystanders are dimmed to 0.3 during a full capture', async () => {
+  it('bystanders are only slightly dimmed (0.15) during a full capture', async () => {
     const c = captureCase('pawn', 'rime');
     let maxDim = 0;
     const sample = () => { for (const b of c.bystanders) maxDim = Math.max(maxDim, b.dim); };
     gsap.ticker.add(sample);
     await runUntil(createSequencePlayer().capture(c.rig.ctx));
     gsap.ticker.remove(sample);
-    expect(maxDim).toBeCloseTo(0.3, 2);
+    expect(maxDim).toBeCloseTo(0.15, 2);
     await drain();
   });
 

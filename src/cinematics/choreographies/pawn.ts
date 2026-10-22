@@ -2,7 +2,6 @@
 // Rime Thrall: cleaver drag-scrape (frost trail on the floor), lunging two-hand hack.
 // En passant: sidestep along the rank, horizontal slash, then step forward onto `to`.
 import { Vector3 } from 'three';
-import { lowSide } from '../shots';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 import { windUp, burstAt, burstAtSocket, trailBetween } from './util';
 
@@ -54,7 +53,7 @@ export const pawn: Choreography = (e) => {
   const r = e.resolve(a.impactAt + 0.35, e.S, { after: a.end });
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd, end: r.end,
-    cues: [{ at: 0, shot: lowSide(e.inputs) }],
+    cues: [{ at: 0, shot: e.pickShot('lowSide') }],
     shatter: { magnitude: MAGNITUDE.pawn }, trauma: TRAUMA.pawn, hitStopMs: HIT_STOP_MS.pawn, heavy: false,
   };
 };

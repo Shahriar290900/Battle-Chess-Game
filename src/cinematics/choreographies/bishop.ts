@@ -4,7 +4,6 @@
 // The bishop glides onto the square after the burst.
 import { Vector3 } from 'three';
 import { flatDist, socketPos } from '../common';
-import { overShoulder } from '../shots';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 
 const CHANNEL = 0.6;
@@ -47,7 +46,7 @@ export const bishop: Choreography = (e) => {
   const r = e.resolve(a.impactAt + 0.12 + shatterDelay + 0.1, e.S, { after: a.end });
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd, end: r.end,
-    cues: [{ at: 0, shot: overShoulder(e.inputs) }],
+    cues: [{ at: 0, shot: e.pickShot('overShoulder', { attackerAt: e.S }) }],
     shatter: { magnitude: MAGNITUDE.bishop }, trauma: TRAUMA.bishop, hitStopMs: HIT_STOP_MS.bishop, heavy: false,
     shatterDelay, holdHitReact: true,
   };

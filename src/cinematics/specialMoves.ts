@@ -5,6 +5,7 @@ import { restYaw, SIDE_FACTION, yawToward } from '../contracts';
 import { CameraDriver } from './cameraDriver';
 import { buildTravel, settleActor } from './moveSequence';
 import { clamp, flatDist, smoothstep, socketPos, wrapPi } from './common';
+import { FightFrame } from './fightFrame';
 import { ShatterJob } from './shatterJob';
 import { orbit360 } from './shots';
 import type { Stage } from './stage';
@@ -142,12 +143,18 @@ export function buildCheckmate(stage: Stage, kingSquare: Square): void {
     driver = new CameraDriver(camera.borrow(), () => board.allActors());
     const cp = camera.camera.position;
     driver.setCues([{ at: 0, shot: orbit360(() => king.root.position, MATE_ORBIT_SECONDS, Math.atan2(cp.x - K.x, cp.z - K.z), 3.4) }], 0.8);
-    const d = driver;
-    tl.eventCallback('onUpdate', () => d.update(tl.time()));
   } catch (e) { console.warn('[cinematics] camera.borrow failed', e); }
+  const bystanders = board.allActors().filter((a) => a !== king);
+  const frame = new FightFrame(stage, {
+    driver, keyFaction: SIDE_FACTION[king.side === 'w' ? 'b' : 'w'], rimFaction: kingFaction,
+    focus: () => [king.root.position], bystanders: () => bystanders,
+  });
+  frame.fadeIn(0, 0.4);
+  frame.fadeOut(MATE_ORBIT_SECONDS - 0.6, 0.5);
+  tl.eventCallback('onUpdate', () => frame.update(tl.time()));
   const startRestore = (duration: number) => {
     if (restoreStarted || !driver) return;
-    restoreStarted = true; driver.released = true;
+    restoreStarted = true; driver.released = true; frame.release();
     stage.safe(() => { stage.track(camera.restore(duration)); });
   };
 

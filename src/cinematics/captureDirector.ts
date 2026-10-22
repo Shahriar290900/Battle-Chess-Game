@@ -4,6 +4,8 @@ import { Vector3 } from 'three';
 import type { PieceActor, SequenceContext } from '../contracts';
 import { restYaw, yawToward } from '../contracts';
 import { CameraDriver } from './cameraDriver';
+import { FightFrame } from './fightFrame';
+import { pickShot } from './shotPicker';
 import { CHOREOGRAPHIES } from './choreographies';
 import type { AttackPlacement, CaptureEnv, ChoreoPlan, ResolvePlacement } from './choreographies/types';
 import { clamp, flatDir, flatDist, socketPos, wrapPi } from './common';
@@ -14,7 +16,8 @@ import { hitStopPlan, type WarpPlan } from './timeWarp';
 
 /** captureMode 'quick' plays the timeline at 2.5x (~40 % of the length). */
 export const QUICK_SCALE = 2.5;
-const DIM = 0.3;
+/** Bystanders are only dimmed slightly (the lighting rig makes the fighters stand out). */
+const DIM = 0.15;
 const SETUP_END = 0.1;
 const FACE_DUR = 0.2;
 /** The Attack clip's follow-through is played this much faster so a capture does not drag. */
@@ -95,7 +98,7 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   const seatZ: 1 | -1 = (driver ? camera.camera.position.z : 1) >= 0 ? 1 : -1;
   const startRestore = (duration: number) => {
     if (restoreStarted || !driver) return;
-    restoreStarted = true; driver.released = true;
+    restoreStarted = true; driver.released = true; frame.release();
     stage.safe(() => { stage.track(camera.restore(duration)); });
   };
 
@@ -118,6 +121,12 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   stage.yaw(attacker, yawToward(A, D), SETUP_END, FACE_DUR);
   stage.yaw(defender, yawToward(D, A), SETUP_END, FACE_DUR);
 
+  // ------------------------------------------------------------ lighting + occluder fading
+  const frame = new FightFrame(stage, {
+    driver, keyFaction: attacker.faction, rimFaction: defender.faction,
+    focus: () => [attacker.root.position, defender.root.position], bystanders: () => bystanders,
+  });
+
   // ------------------------------------------------------------ choreography
   const perp = perpToSeat(dir, seatZ);
   const inputs: ShotInputs = {
@@ -127,6 +136,7 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   const env: CaptureEnv = {
     stage, ctx, attacker, defender, faction: attacker.faction, defFaction: defender.faction, quick,
     A, D, To, dir, perp, dist, strikeRange, S, t0, isEnPassant: move.isEnPassant, seatZ, inputs,
+    pickShot: (name, o) => pickShot(name, inputs, bystanders, board.allActors(), o),
     placeAttack(earliest, desired): AttackPlacement {
       const at = attacker.attackTimeline();
       const imp = at.labels.impact ?? attacker.extras.impactTime;
@@ -193,16 +203,17 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
 
   // ------------------------------------------------------------ camera
   if (driver) {
-    const d = driver;
-    d.setCues(plan.cues);
-    d.setPunch(plan.impactAt, 0.5, plan.heavy ? 6 : 4, plan.heavy ? 0.3 : 0.2);
-    tl.eventCallback('onUpdate', () => d.update(tl.time()));
+    driver.setCues(plan.cues);
+    driver.setPunch(plan.impactAt, 0.5, plan.heavy ? 6 : 4, plan.heavy ? 0.3 : 0.2);
   }
+  frame.fadeIn(0, 0.3);
+  tl.eventCallback('onUpdate', () => frame.update(tl.time()));
 
   // ------------------------------------------------------------ cleanup
   const cleanupAt = plan.walkEnd;
   stage.at(cleanupAt, () => { startRestore(quick ? 0.5 : 1.1); board.setActorSquare(attacker, move.to); });
   stage.tweenEach(cleanupAt, 0.3, DIM, 0, setDim);
+  frame.fadeOut(cleanupAt, 0.3);
   for (const a of bystanders) if (startYaw.has(a)) stage.yaw(a, startYaw.get(a)!, cleanupAt, 0.35, 'power2.out');
   tl.set({}, {}, Math.max(plan.end, cleanupAt + 0.4, shatterAt + 0.1));
 

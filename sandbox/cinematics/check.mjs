@@ -14,8 +14,12 @@ mkdirSync(out, { recursive: true });
 const args = process.argv.slice(2);
 const only = args.find((a) => a.startsWith('--only='))?.slice(7);
 const portrait = args.includes('--portrait');
+const crowded = args.includes('--crowded');
 const ROLES = ['pawn', 'rook', 'knight', 'bishop', 'queen', 'king'].filter((r) => !only || r === only);
 const FACTIONS = ['emberhold', 'rime'];
+const CASES = crowded
+  ? ['opening-w', 'opening-b', 'backrank-w', 'backrank-b'].map((n) => ({ name: 'crowded_' + n, scenario: n }))
+  : ROLES.flatMap((role) => FACTIONS.map((faction) => ({ name: `${faction}_${role}`, role, faction })));
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const server = await createServer({ root, server: { host: '127.0.0.1', port: 5199, strictPort: false, hmr: false, watch: null }, logLevel: 'warn' });
@@ -40,10 +44,10 @@ try {
   await page.evaluate(() => window.__sandbox.hideUi(true));
   const tag = portrait ? '_portrait' : '';
 
-  for (const role of ROLES) for (const faction of FACTIONS) {
-    const name = `${faction}_${role}${tag}`;
+  for (const c of CASES) {
+    const name = c.name + tag;
     // arm freezes: setup (0.5 s after begin), impact (at the event), resolve (1.4 s after the shatter)
-    const results = await page.evaluate(([r, f]) => {
+    const results = await page.evaluate(([r, f, sc]) => {
       const s = window.__sandbox;
       s.clearFreezers();
       window.__shots = {};
@@ -52,9 +56,9 @@ try {
       arm('setup', 'capture:begin', 550);
       arm('impact', 'capture:impact', 0);
       arm('resolve', 'capture:shatter', 1500);
-      s.playCapture(r, f, 'full').then(() => { window.__done = true; }, (e) => { s.errors.push('capture failed: ' + e + e?.stack); });
+      (sc ? s.playScenario(sc, 'full') : s.playCapture(r, f, 'full')).then(() => { window.__done = true; }, (e) => { s.errors.push('capture failed: ' + e + e?.stack); });
       return true;
-    }, [role, faction]);
+    }, [c.role, c.faction, c.scenario]);
     void results;
     for (const key of ['setup', 'impact', 'resolve']) {
       log('waiting', name, key);

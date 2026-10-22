@@ -113,6 +113,16 @@ export class SandboxActor implements PieceActor {
     for (const [m, b] of this.base) { m.color.copy(b.c).multiplyScalar(1 - a * 0.75); }
   }
   setHighlight() {}
+  /** Occluder fade: translucent + no shadow (the real engine may use dithering). */
+  setFade(a: number) {
+    const faded = a < 0.999;
+    for (const m of this.base.keys()) {
+      const was = m.transparent;
+      m.transparent = faded; m.opacity = a; m.depthWrite = !faded;
+      if (was !== faded) m.needsUpdate = true;
+    }
+    for (const mesh of this.meshes) mesh.castShadow = a > 0.5;
+  }
   setWeaponSummon(s: number) { this.model.getObjectByName(WEAPON_SUMMON_NODE)?.scale.setScalar(s); }
   /** Emissive spike used by fx.flash. */
   flash() { this.flashT = 1; }

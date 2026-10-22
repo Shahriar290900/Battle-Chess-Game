@@ -3,7 +3,6 @@
 // then the tower topples onto it. Shockwave ring + board crack decal.
 import { Vector3 } from 'three';
 import { socketPos } from '../common';
-import { lowSide, topDownSlam } from '../shots';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 import { burstAt, burstAtSocket } from './util';
 
@@ -69,8 +68,8 @@ export const rook: Choreography = (e) => {
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd, end: r.end,
     cues: [
-      { at: 0, shot: topDownSlam(e.inputs) },
-      { at: slamAt, shot: lowSide(e.inputs), blend: 0 }, // cut on the landing
+      { at: 0, shot: e.pickShot('topDownSlam') },
+      { at: slamAt, shot: e.pickShot('lowSide', { attackerAt: e.S }), blend: 0 }, // cut on the landing
     ],
     shatter: { magnitude: MAGNITUDE.rook }, trauma: TRAUMA.rook, hitStopMs: HIT_STOP_MS.rook, heavy: true,
     decal: 'crack',

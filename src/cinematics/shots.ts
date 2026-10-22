@@ -20,7 +20,14 @@ export interface ShotInputs {
   seatZ: 1 | -1;
   /** Viewport aspect ratio; used to keep both pieces in frame on portrait phones. */
   aspect?: () => number;
+  /** Candidate angle: 0 seat side, 1 opposite side, 2 seat side farther and higher (shot scoring picks one). */
+  variant?: 0 | 1 | 2;
 }
+
+const variantOf = (i: ShotInputs) => {
+  const v = i.variant ?? 0;
+  return { flip: v === 1, far: v === 2 ? 1.25 : 1, up: v === 2 ? 0.8 : 0 };
+};
 
 export interface Shot {
   readonly name: ShotName;
@@ -38,11 +45,11 @@ export function frameDistance(halfW: number, halfH: number, fovDeg: number, aspe
 }
 
 /** Unit horizontal vector perpendicular to `d`, pointing to the camera seat side. */
-export function perpToSeat(d: Vector3, seatZ: number, out = new Vector3()): Vector3 {
+export function perpToSeat(d: Vector3, seatZ: number, out = new Vector3(), flip = false): Vector3 {
   out.set(-d.z, 0, d.x);
   const side = out.z * seatZ;
   if (Math.abs(out.z) < 1e-4 ? out.x < 0 : side < 0) out.negate();
-  return out;
+  return flip ? out.negate() : out;
 }
 
 function rotY(v: Vector3, a: number, out: Vector3): Vector3 {
@@ -57,12 +64,13 @@ export function lowSide(i: ShotInputs): Shot {
     name: 'lowSide',
     pose(_t, out = newPose()) {
       A.copy(i.attacker()); D.copy(i.defender());
-      flatDir(A, D, d); perpToSeat(d, i.seatZ, s);
+      const vr = variantOf(i);
+      flatDir(A, D, d); perpToSeat(d, i.seatZ, s, vr.flip);
       mid.copy(A).lerp(D, 0.5);
       const sep = Math.hypot(D.x - A.x, D.z - A.z);
       const fov = 35;
-      const dist = Math.max(3.6, frameDistance(sep / 2 + 1.0, 1.3, fov, aspectOf(i)));
-      out.position.copy(mid).addScaledVector(s, dist); out.position.y = 0.9 + Math.max(0, sep - 2) * 0.12;
+      const dist = Math.max(3.6, frameDistance(sep / 2 + 1.0, 1.3, fov, aspectOf(i))) * vr.far;
+      out.position.copy(mid).addScaledVector(s, dist); out.position.y = 0.9 + Math.max(0, sep - 2) * 0.12 + vr.up;
       out.lookAt.set(mid.x, 0.75, mid.z);
       out.fov = fov;
       return out;
@@ -77,10 +85,11 @@ export function overShoulder(i: ShotInputs): Shot {
     name: 'overShoulder',
     pose(_t, out = newPose()) {
       A.copy(i.attacker()); D.copy(i.defender());
-      flatDir(A, D, d); perpToSeat(d, i.seatZ, s);
+      const vr = variantOf(i);
+      flatDir(A, D, d); perpToSeat(d, i.seatZ, s, vr.flip);
       const sep = Math.hypot(D.x - A.x, D.z - A.z);
-      const back = Math.max(2.6, frameDistance(sep / 2 * 0.35 + 0.8, 1.0, 42, aspectOf(i)) * 0.7);
-      out.position.copy(A).addScaledVector(d, -back).addScaledVector(s, 0.7); out.position.y = 1.7;
+      const back = Math.max(2.6, frameDistance(sep / 2 * 0.35 + 0.8, 1.0, 42, aspectOf(i)) * 0.7) * vr.far;
+      out.position.copy(A).addScaledVector(d, -back).addScaledVector(s, 0.7 * vr.far); out.position.y = 1.7 + vr.up;
       out.lookAt.copy(A).lerp(D, 0.6); out.lookAt.y = 0.8;
       out.fov = 42;
       return out;
@@ -100,7 +109,8 @@ export function topDownSlam(i: ShotInputs): Shot {
       const fov = 45;
       const sep = Math.hypot(D.x - A.x, D.z - A.z);
       const h = clamp(frameDistance(Math.max(2.4, sep * 0.4), 2.2, fov, aspectOf(i)), 5.2, 9);
-      out.position.set(centre.x, h, centre.z + i.seatZ * 1.5);
+      const vr = variantOf(i);
+      out.position.set(centre.x, h + vr.up, centre.z + i.seatZ * 1.5 * (vr.flip ? -1 : 1) * vr.far);
       out.lookAt.set(centre.x, 0, centre.z);
       out.fov = fov;
       return out;
@@ -121,9 +131,10 @@ export function trackingLeap(i: ShotInputs): Shot {
       const dt = lastT < 0 ? 1 / 60 : Math.max(0, t - lastT);
       lastT = t;
       L.lerp(A, 1 - Math.exp(-dt / 0.1));
-      flatDir(A0, D, d); perpToSeat(d, i.seatZ, s);
-      const dist = Math.max(4, frameDistance(2.1, 1.3, 40, aspectOf(i)));
-      out.position.copy(L).addScaledVector(s, dist); out.position.y = 1.5 + L.y * 0.5;
+      const vr = variantOf(i);
+      flatDir(A0, D, d); perpToSeat(d, i.seatZ, s, vr.flip);
+      const dist = Math.max(4, frameDistance(2.1, 1.3, 40, aspectOf(i))) * vr.far;
+      out.position.copy(L).addScaledVector(s, dist); out.position.y = 1.5 + L.y * 0.5 + vr.up;
       out.lookAt.copy(L).lerp(D, 0.3); out.lookAt.y = 0.7 + L.y * 0.45;
       out.fov = 40;
       return out;
@@ -144,16 +155,17 @@ export function heroOrbit(i: ShotInputs, opts: HeroOrbitOptions = {}): Shot {
       A.copy(i.attacker()); D.copy(i.defender());
       flatDir(A, D, d);
       // swing toward the seat side so the end view faces the audience
+      const vr = variantOf(i);
       const end = Math.PI / 3;
-      const sign = rotY(d, end, probe).z * i.seatZ >= rotY(d, -end, dc).z * i.seatZ ? 1 : -1;
+      const sign = (rotY(d, end, probe).z * i.seatZ >= rotY(d, -end, dc).z * i.seatZ ? 1 : -1) * (vr.flip ? -1 : 1);
       const u = smoothstep(t / T);
       const phi = lerp(Math.PI, end, u);
       rotY(d, sign * phi, dc);
       const follow = smoothstep(t / (T * 1.4));
       c.copy(A).lerp(probe.copy(A).lerp(D, 0.5), follow);
       const sep = Math.hypot(D.x - A.x, D.z - A.z);
-      const R = Math.max(3.9, frameDistance(sep * 0.25 + 1.1, 1.3, 42, aspectOf(i)));
-      out.position.copy(c).addScaledVector(dc, R); out.position.y = lerp(1.6, 1.25, u);
+      const R = Math.max(3.9, frameDistance(sep * 0.25 + 1.1, 1.3, 42, aspectOf(i))) * vr.far;
+      out.position.copy(c).addScaledVector(dc, R); out.position.y = lerp(1.6, 1.25, u) + vr.up;
       out.lookAt.copy(c).lerp(D, 0.3 * follow); out.lookAt.y = 1.0;
       out.fov = 42;
       return out;
@@ -168,11 +180,12 @@ export function lowHero(i: ShotInputs): Shot {
     name: 'lowHero',
     pose(_t, out = newPose()) {
       A.copy(i.attacker()); D.copy(i.defender());
-      flatDir(A, D, d); perpToSeat(d, i.seatZ, s);
+      const vr = variantOf(i);
+      flatDir(A, D, d); perpToSeat(d, i.seatZ, s, vr.flip);
       const fov = 52;
       const sep = Math.hypot(D.x - A.x, D.z - A.z);
-      const dist = Math.max(3.1, frameDistance(sep / 2 + 0.9, 1.4, fov, aspectOf(i)) * 0.85);
-      out.position.copy(A).addScaledVector(s, dist).addScaledVector(d, 0.3); out.position.y = 1.35;
+      const dist = Math.max(3.1, frameDistance(sep / 2 + 0.9, 1.4, fov, aspectOf(i)) * 0.85) * vr.far;
+      out.position.copy(A).addScaledVector(s, dist).addScaledVector(d, 0.3); out.position.y = 1.35 + vr.up;
       out.lookAt.copy(A).lerp(D, 0.45); out.lookAt.y = 0.9;
       out.fov = fov;
       return out;
@@ -196,25 +209,34 @@ export function orbit360(centre: () => Vector3, seconds: number, startAngle = 0,
   };
 }
 
-/** Clamp above the board and push the camera out of nearby piece volumes. */
+/** Camera must look down enough that the top frame edge stays on the lit board, not the dark hall. */
+const PITCH_FRACTION = 1.3;
+const MAX_CAMERA_Y = 6;
+/** Keep clear of piece volumes by this horizontal radius. */
+const CLEARANCE = 0.8;
+
+/** Clamp above the board, tilt down toward the board, and push the camera out of piece volumes. */
 export function constrainPose(pose: ShotPose, actors: readonly PieceActor[]): ShotPose {
   const p = pose.position;
-  for (const a of actors) {
-    const ap = a.root.position;
-    const h = ROLE_HEIGHT[a.role] + 0.2;
-    if (p.y > h) continue;
-    const dx = p.x - ap.x; const dz = p.z - ap.z;
-    const r = 0.5;
-    const d2 = dx * dx + dz * dz;
-    if (d2 >= r * r) continue;
-    const d = Math.sqrt(d2);
-    if (d < 1e-4) {
-      // dead centre: push away from what we are looking at
-      const lx = p.x - pose.lookAt.x; const lz = p.z - pose.lookAt.z;
-      const l = Math.hypot(lx, lz) || 1;
-      p.x = ap.x + (lx / l) * r; p.z = ap.z + (lz / l) * r;
-    } else {
-      p.x = ap.x + (dx / d) * r; p.z = ap.z + (dz / d) * r;
+  const dh = Math.hypot(p.x - pose.lookAt.x, p.z - pose.lookAt.z);
+  const minY = pose.lookAt.y + dh * Math.tan((pose.fov * Math.PI / 180) / 2 * PITCH_FRACTION);
+  if (p.y < minY) p.y = Math.min(minY, MAX_CAMERA_Y);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const a of actors) {
+      const ap = a.root.position;
+      const h = ROLE_HEIGHT[a.role] + 0.45;
+      if (p.y > h) continue;
+      const dx = p.x - ap.x; const dz = p.z - ap.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= CLEARANCE * CLEARANCE) continue;
+      const d = Math.sqrt(d2);
+      if (d < 1e-4) {
+        const lx = p.x - pose.lookAt.x; const lz = p.z - pose.lookAt.z;
+        const l = Math.hypot(lx, lz) || 1;
+        p.x = ap.x + (lx / l) * CLEARANCE; p.z = ap.z + (lz / l) * CLEARANCE;
+      } else {
+        p.x = ap.x + (dx / d) * CLEARANCE; p.z = ap.z + (dz / d) * CLEARANCE;
+      }
     }
   }
   if (p.y < MIN_CAMERA_Y) p.y = MIN_CAMERA_Y;

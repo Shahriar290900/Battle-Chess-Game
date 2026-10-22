@@ -3,7 +3,6 @@
 // target and lift it, then a backhand shatters it mid-air.
 import { Vector3 } from 'three';
 import { socketPos } from '../common';
-import { lowHero } from '../shots';
 import type { WarpPlan } from '../timeWarp';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 import { windUp, burstAt, burstAtSocket } from './util';
@@ -50,7 +49,7 @@ export const king: Choreography = (e) => {
   const r = e.resolve(a.impactAt + 0.45, e.S, { after: a.end });
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd, end: r.end,
-    cues: [{ at: 0, shot: lowHero(e.inputs), blend: 0.7 }],
+    cues: [{ at: 0, shot: e.pickShot('lowHero', { attackerAt: e.S }), blend: 0.7 }],
     shatter: { magnitude: MAGNITUDE.king }, trauma: TRAUMA.king, hitStopMs: HIT_STOP_MS.king, heavy: true, warp,
   };
 };

@@ -80,15 +80,45 @@ function ctxFor(move: MoveResult): SequenceContext {
   return { move, board, camera, fx, registry, bus, settings };
 }
 
-async function playCapture(role: Role, faction: Faction, mode: CaptureMode = 'full') {
-  const { from, to, side } = setupScene(role, faction);
+async function runCapture(from: string, to: string, role: Role, side: Side, mode: CaptureMode) {
   settings.captureMode = mode;
   gsap.globalTimeline.resume(); frozen = false;
+  const captured = board.actorAt(to)?.role ?? 'knight';
   const move: MoveResult = {
-    from, to, san: 'x', side, role, captured: 'knight', capturedSquare: to, flags: 'c', isCastle: false, isEnPassant: false,
-    check: false, mate: false, stalemate: false, draw: false, fenAfter: '', 
+    from, to, san: 'x', side, role, captured, capturedSquare: to, flags: 'c', isCastle: false, isEnPassant: false,
+    check: false, mate: false, stalemate: false, draw: false, fenAfter: '',
   };
   await player.capture(ctxFor(move));
+}
+
+async function playCapture(role: Role, faction: Faction, mode: CaptureMode = 'full') {
+  const { from, to, side } = setupScene(role, faction);
+  await runCapture(from, to, role, side, mode);
+}
+
+/** Full 32-piece board, then a capture in the middle of the crowd / on the back rank. */
+const BACK: Role[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+type Scenario = 'opening-w' | 'opening-b' | 'backrank-w' | 'backrank-b';
+async function playScenario(name: Scenario, mode: CaptureMode = 'full') {
+  board.clear();
+  const rm = new Set<string>();
+  const extra: Array<[Faction, Role, string]> = [];
+  let from = ''; let to = ''; let role: Role = 'pawn'; let side: Side = 'w';
+  if (name === 'opening-w') { rm.add('e2'); rm.add('d7'); extra.push(['emberhold', 'pawn', 'e4'], ['rime', 'pawn', 'd5']); from = 'e4'; to = 'd5'; }
+  if (name === 'opening-b') { rm.add('e2'); rm.add('d7'); rm.add('g1'); extra.push(['emberhold', 'pawn', 'e4'], ['emberhold', 'knight', 'f3'], ['rime', 'pawn', 'd5']); from = 'd5'; to = 'e4'; side = 'b'; }
+  if (name === 'backrank-w') { rm.add('d2'); rm.add('d7'); from = 'd1'; to = 'd8'; role = 'queen'; }
+  if (name === 'backrank-b') { rm.add('d2'); rm.add('d7'); from = 'd8'; to = 'd1'; role = 'queen'; side = 'b'; }
+  for (let f = 0; f < 8; f++) {
+    for (const [rank, fac, r] of [['1', 'emberhold', BACK[f]], ['2', 'emberhold', 'pawn'], ['7', 'rime', 'pawn'], ['8', 'rime', BACK[f]]] as Array<[string, Faction, Role]>) {
+      const sq = 'abcdefgh'[f] + rank;
+      if (!rm.has(sq)) board.add(fac, r, sq);
+    }
+  }
+  for (const [fac, r, sq] of extra) board.add(fac, r, sq);
+  camera.toSeat(side, { instant: true });
+  const attacker = board.actorAt(from)!;
+  role = attacker.role;
+  await runCapture(from, to, role, side, mode);
 }
 
 function resize() {
@@ -103,6 +133,7 @@ const sandbox = {
   eventLog,
   get frozen() { return frozen; },
   playCapture,
+  playScenario,
   skip: () => player.skip(),
   settings,
   camera,

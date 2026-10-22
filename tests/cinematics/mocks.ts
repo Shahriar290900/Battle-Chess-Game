@@ -28,6 +28,9 @@ export class MockActor implements PieceActor {
   readonly extras;
   square: Square;
   dim = 0;
+  fade = 1;
+  minFade = 1;
+  fadeCalls = 0;
   summon = 0;
   maxSummon = 0;
   playing = 'Idle';
@@ -78,6 +81,7 @@ export class MockActor implements PieceActor {
   getYaw() { return this.root.rotation.y; }
   setDim(a: number) { this.dim = a; }
   setHighlight() {}
+  setFade(a: number) { this.fade = a; this.minFade = Math.min(this.minFade, a); this.fadeCalls++; }
   setWeaponSummon(s: number) { this.summon = s; this.maxSummon = Math.max(this.maxSummon, s); }
   update() {}
   dispose() { this.disposed = true; }

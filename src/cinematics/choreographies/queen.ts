@@ -7,7 +7,6 @@
 import { Vector3 } from 'three';
 import { WEAPON_SUMMON_NODE } from '../../contracts';
 import { lerp, socketPos, TAU } from '../common';
-import { heroOrbit } from '../shots';
 import { HIT_STOP_MS, MAGNITUDE, TRAUMA, type Choreography } from './types';
 import { windUp, burstAt, trailBetween } from './util';
 
@@ -91,7 +90,7 @@ export const queen: Choreography = (e) => {
   return {
     approachAt, attackAt: a.attackAt, impactAt: a.impactAt, resolveAt: r.resolveAt, walkEnd: r.walkEnd,
     end: Math.max(r.end, dissolveAt + dissolveDur),
-    cues: [{ at: 0, shot: heroOrbit(e.inputs, { duration: e.quick ? 1.2 : 1.8 }) }],
+    cues: [{ at: 0, shot: e.pickShot('heroOrbit', { orbitSeconds: e.quick ? 1.2 : 1.8, attackerAt: from }) }],
     shatter: { magnitude: MAGNITUDE.queen, cutNormal }, trauma: TRAUMA.queen, hitStopMs: HIT_STOP_MS.queen, heavy: true,
     decal: ember ? 'scorch' : 'frost',
   };
