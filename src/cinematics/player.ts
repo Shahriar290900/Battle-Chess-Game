@@ -5,7 +5,8 @@ import type { PieceActor, SequenceContext, SequencePlayer } from '../contracts';
 import { buildFullCapture, buildOffCapture, findCaptureActors, QUICK_SCALE } from './captureDirector';
 import { clamp } from './common';
 import { buildMove } from './moveSequence';
-import { buildCastle, buildCheck, buildCheckmate, buildPromotion, buildStalemate } from './specialMoves';
+import { buildCheck } from './provoke';
+import { buildCastle, buildCheckmate, buildPromotion, buildStalemate } from './specialMoves';
 import { Stage } from './stage';
 
 export function createSequencePlayer(): SequencePlayer {
@@ -72,7 +73,7 @@ export function createSequencePlayer(): SequencePlayer {
     },
 
     async check(ctx, kingSquare) {
-      await run(ctx, 'check', (s) => { buildCheck(s, kingSquare); });
+      await run(ctx, 'check', (s) => buildCheck(s, kingSquare));
     },
 
     async checkmate(ctx, kingSquare) {

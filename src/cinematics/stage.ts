@@ -41,13 +41,40 @@ export class Stage {
   private resolveDone!: () => void;
   private readonly settles: SettleFn[] = [];
   private readonly waits: Promise<unknown>[] = [];
-  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
   private readonly killTargets = new Set<object>();
   private readonly tmpV = new Vector3();
 
   constructor(readonly ctx: SequenceContext, readonly label: string) {
     this.tl = gsap.timeline({ paused: true, onComplete: () => { void this.complete(); } });
     this.done = new Promise<void>((r) => { this.resolveDone = r; });
+    // kinematics look-at targets are always released first when the stage settles
+    this.onSettle(() => { for (const a of this.looked) { try { this.ctx.kinematics?.lookAt(a, null); } catch { /* ignore */ } } this.looked.clear(); });
+  }
+
+  // ------------------------------------------------------------ kinematics hooks (optional layer)
+
+  private readonly looked = new Set<PieceActor>();
+
+  get hasKinematics(): boolean { return !!this.ctx.kinematics; }
+
+  /** Head/spine turn toward a world point (released automatically on settle). */
+  look(actor: PieceActor, target: Vector3, weight = 1): void {
+    const k = this.ctx.kinematics;
+    if (!k) return;
+    this.looked.add(actor);
+    this.safe(() => k.lookAt(actor, target.clone(), weight));
+  }
+
+  unlook(actor: PieceActor): void {
+    if (!this.looked.delete(actor)) return;
+    this.safe(() => this.ctx.kinematics?.lookAt(actor, null));
+  }
+
+  /** Radial shove for impacts, slams and landings. */
+  impulse(origin: Vector3, strength: number, radius = 3): void {
+    const k = this.ctx.kinematics;
+    if (k) this.safe(() => k.impulse(origin.clone(), strength, radius));
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -66,13 +93,14 @@ export class Stage {
   start(speed: number): void {
     this.tl.timeScale(speed);
     const real = (this.tl.totalDuration() / Math.max(0.05, speed)) * 1000;
-    const arm = (ms: number) => {
-      this.watchdog = setTimeout(() => {
-        // a deliberately paused global timeline (debugging, sandbox freeze) is not a hang
-        if (gsap.globalTimeline.paused() && !this.finished) arm(1000); else this.finish('watchdog');
-      }, ms);
-    };
-    arm(real + WATCHDOG_EXTRA_MS);
+    // Watchdog: counts only un-paused real time (a deliberately paused global timeline is not a hang).
+    const limit = real + WATCHDOG_EXTRA_MS;
+    let used = 0;
+    this.watchdog = setInterval(() => {
+      if (this.finished) return;
+      if (!gsap.globalTimeline.paused()) used += 500;
+      if (used >= limit) this.finish('watchdog');
+    }, 500);
     if (this.tl.totalDuration() <= 0) { void this.complete(); return; }
     this.tl.play(0);
   }
@@ -89,7 +117,7 @@ export class Stage {
     if (this.finished) return;
     this.finished = true;
     this.reason = reason;
-    if (this.watchdog) { clearTimeout(this.watchdog); this.watchdog = null; }
+    if (this.watchdog) { clearInterval(this.watchdog); this.watchdog = null; }
     try { this.tl.kill(); } catch { /* ignore */ }
     for (const t of this.killTargets) gsap.killTweensOf(t);
     this.warp.stop();

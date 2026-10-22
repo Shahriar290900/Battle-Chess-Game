@@ -5,6 +5,7 @@ import {
 } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type {
   AssetId, AssetRegistry, ClipName, Faction, PieceActor, PieceExtras, Role, Side, SocketName, Square, Timeline,
@@ -140,7 +141,7 @@ export class SandboxActor implements PieceActor {
 }
 
 export class SandboxRegistry implements AssetRegistry {
-  private loader = new GLTFLoader();
+  private loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   private gltfs = new Map<AssetId, GLTF>();
   private frags = new Map<AssetId, Promise<GLTF>>();
   outstanding = 0;

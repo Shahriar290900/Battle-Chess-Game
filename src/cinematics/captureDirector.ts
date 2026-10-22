@@ -107,13 +107,18 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   const centre = A.clone().lerp(D, 0.5);
   const setDim = (v: number) => { for (const a of bystanders) a.setDim(v); };
   stage.tweenEach(0, 0.3, 0, DIM, setDim);
-  // "look" turn: nearby pieces glance toward the fight
-  for (const a of bystanders) {
-    const ap = a.root.position;
-    if (Math.hypot(ap.x - centre.x, ap.z - centre.z) > 5.5) continue;
-    const rest = restYaw(a.side);
-    const turn = clamp(wrapPi(yawToward(ap, centre) - rest) * 0.4, -0.7, 0.7);
-    stage.yaw(a, rest + turn, 0.05, 0.35, 'power2.out');
+  // nearby pieces watch the fight: kinematics head/spine look-at when available, else a short yaw turn
+  const watchers = bystanders.filter((a) => Math.hypot(a.root.position.x - centre.x, a.root.position.z - centre.z) <= 5.5);
+  const lookPoint = new Vector3(centre.x, 0.9, centre.z);
+  if (stage.hasKinematics) {
+    stage.at(0.05, () => { for (const a of watchers) stage.look(a, lookPoint, 0.7); });
+  } else {
+    for (const a of watchers) {
+      const ap = a.root.position;
+      const rest = restYaw(a.side);
+      const turn = clamp(wrapPi(yawToward(ap, centre) - rest) * 0.4, -0.7, 0.7);
+      stage.yaw(a, rest + turn, 0.05, 0.35, 'power2.out');
+    }
   }
 
   // ------------------------------------------------------------ face
@@ -180,6 +185,11 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
     bus.emit('capture:impact', { attacker: attacker.role, defender: defender.role, attackerFaction: attacker.faction, defenderFaction: defender.faction, heavy: plan.heavy });
     stage.warp.play(warp);
     camera.shake(plan.trauma);
+    if (attacker.role !== 'bishop') { // weapon meets weapon (spells have no clash)
+      bus.emit('clash', { attackerFaction: attacker.faction, defenderFaction: defender.faction, heavy: plan.heavy });
+      fx.emit('sparks', D.clone().setY(0.8), { count: plan.heavy ? 28 : 14, scale: plan.heavy ? 1 : 0.7 });
+    }
+    stage.impulse(D, plan.trauma * 1.3, 3.2); // nearby pieces wobble away from the blow
     if (sampled) socketPos(attacker, 'socket_weapon_R', p2);
     fx.decal(D.clone(), decal);
   });
@@ -211,7 +221,10 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
 
   // ------------------------------------------------------------ cleanup
   const cleanupAt = plan.walkEnd;
-  stage.at(cleanupAt, () => { startRestore(quick ? 0.5 : 1.1); board.setActorSquare(attacker, move.to); });
+  stage.at(cleanupAt, () => {
+    startRestore(quick ? 0.5 : 1.1); board.setActorSquare(attacker, move.to);
+    for (const a of watchers) stage.unlook(a);
+  });
   stage.tweenEach(cleanupAt, 0.3, DIM, 0, setDim);
   frame.fadeOut(cleanupAt, 0.3);
   for (const a of bystanders) if (startYaw.has(a)) stage.yaw(a, startYaw.get(a)!, cleanupAt, 0.35, 'power2.out');

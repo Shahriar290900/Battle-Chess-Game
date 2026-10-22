@@ -49,7 +49,19 @@ export class SandboxBoard implements BoardApi {
     const m = this.tiles.get(sq)?.material as MeshStandardMaterial | undefined;
     if (m) m.emissive.set(color ?? 0);
   }
-  syncToFen() {}
+  syncToFen(fen: string) {
+    if (!fen.includes('/')) return;
+    this.clear();
+    const sym: Record<string, Role> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
+    fen.split(' ')[0].split('/').forEach((row, ri) => {
+      let f = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) { f += Number(ch); continue; }
+        this.add(ch === ch.toUpperCase() ? 'emberhold' : 'rime', sym[ch.toLowerCase()], 'abcdefgh'[f] + (8 - ri));
+        f++;
+      }
+    });
+  }
   update(dt: number) { for (const a of this.map.values()) a.update(dt); }
 }
 export type { Object3D };

@@ -62,6 +62,7 @@ export const knight: Choreography = (e) => {
     e.ctx.bus.emit('move:step', { faction, role: 'knight' });
     e.ctx.fx.emit('dustPuff', land.clone(), { count: 10, scale: 0.9 });
     e.ctx.camera.shake(0.2);
+    e.stage.impulse(land, 0.35, 2.2); // landing thud
   });
 
   if (faction === 'rime') {

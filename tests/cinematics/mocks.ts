@@ -2,7 +2,7 @@
 // Object3Ds (no WebGL, no GLB loading).
 import { Mesh, Object3D, PerspectiveCamera, Quaternion, Scene, Vector3, CylinderGeometry } from 'three';
 import type {
-  AssetRegistry, BoardApi, CameraRig, CinematicCameraHandle, FxApi, PieceActor, SequenceContext, Settings, Timeline,
+  AssetRegistry, BoardApi, CameraRig, CinematicCameraHandle, FxApi, GraphicsSettings, KinematicsApi, PieceActor, SequenceContext, Settings, Timeline,
 } from '../../src/contracts';
 import {
   assetId, DEFAULT_EXTRAS, DEFAULT_SETTINGS, EventBus, restYaw, squareToWorld, WEAPON_SUMMON_NODE,
@@ -12,10 +12,10 @@ import type {
 } from '../../src/contracts';
 import { gsap } from './harness';
 
-const CLIP_LEN: Record<ClipName, number> = { Idle: 2, Move: 0.8, Attack: 1.9, HitReact: 0.6, Victory: 1.4 };
+const CLIP_LEN: Record<ClipName, number> = { Idle: 2, Move: 0.8, Attack: 1.9, HitReact: 0.6, Victory: 1.4, Taunt: 1.2, Surrender: 2.0 };
 const FACTION_SIDE: Record<Faction, Side> = { emberhold: 'w', rime: 'b' };
 
-export interface ActorOpts { noSocketCast?: boolean; noClips?: boolean; noImpactLabel?: boolean }
+export interface ActorOpts { noSocketCast?: boolean; noClips?: boolean; noImpactLabel?: boolean; noTaunt?: boolean; noSurrender?: boolean }
 
 export class MockActor implements PieceActor {
   readonly id: AssetId;
@@ -54,7 +54,12 @@ export class MockActor implements PieceActor {
     this.root.rotation.y = restYaw(this.side);
   }
 
-  hasClip(clip: ClipName) { return !this.opts.noClips && clip in CLIP_LEN; }
+  hasClip(clip: ClipName) {
+    if (this.opts.noClips) return false;
+    if (clip === 'Taunt' && this.opts.noTaunt) return false;
+    if (clip === 'Surrender' && this.opts.noSurrender) return false;
+    return clip in CLIP_LEN;
+  }
   clipDuration(clip: ClipName) { return CLIP_LEN[clip]; }
   play(clip: ClipName) { this.playing = clip; return null; }
   scrub(clip: ClipName, time: number) { this.scrubs.push([clip, time]); this.playing = clip; }
@@ -122,7 +127,36 @@ export class MockBoard implements BoardApi {
   }
   squareCenter(sq: Square, target: Vector3) { return squareToWorld(sq, target); }
   tintSquare(sq: Square, color: number | null) { this.tints.push([sq, color]); }
-  syncToFen(fen: string) { this.syncCalls.push(fen); }
+  syncToFen(fen: string) {
+    this.syncCalls.push(fen);
+    if (!fen.includes('/')) return; // placeholder FENs used by the unit tests
+    for (const a of this.map.values()) this.scene.remove(a.root);
+    this.map.clear();
+    const symRole: Record<string, Role> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
+    fen.split(' ')[0].split('/').forEach((row, ri) => {
+      let f = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) { f += Number(ch); continue; }
+        const white = ch === ch.toUpperCase();
+        this.add(white ? 'emberhold' : 'rime', symRole[ch.toLowerCase()], 'abcdefgh'[f] + (8 - ri));
+        f++;
+      }
+    });
+  }
+}
+
+export class MockKinematics implements KinematicsApi {
+  looks = new Map<PieceActor, Vector3 | null>();
+  lookCalls = 0;
+  impulses: Array<{ origin: Vector3; strength: number; radius?: number }> = [];
+  attach() {}
+  detach() {}
+  lookAt(actor: PieceActor, target: Vector3 | null) { this.lookCalls++; this.looks.set(actor, target); }
+  impulse(origin: Vector3, strength: number, radius?: number) { this.impulses.push({ origin: origin.clone(), strength, radius }); }
+  setEnabled() {}
+  update() {}
+  /** Actors still being looked-at (i.e. not released). */
+  get active() { return [...this.looks.entries()].filter(([, v]) => v !== null).map(([a]) => a); }
 }
 
 export interface PoseSample { position: Vector3; lookAt: Vector3; fov: number; t: number }
@@ -180,6 +214,8 @@ export class MockFx implements FxApi {
   count(name: string) { return this.calls.filter((c) => c.name === name).length; }
   async init() {}
   setQuality(_t: QualityTier) {}
+  setGraphics(_g: GraphicsSettings) {}
+  setStaticActors(_a: PieceActor[]) {}
   emit(preset: ParticlePreset, position: Vector3, opts?: EmitOptions) {
     if (!Number.isFinite(position.x + position.y + position.z)) throw new Error('emit with NaN position');
     this.rec('emit', preset, position, opts);
@@ -235,11 +271,12 @@ export interface Rig {
   board: MockBoard; camera: MockCamera; fx: MockFx; registry: MockRegistry; bus: EventBus;
   events: Array<{ name: string; payload: any }>;
   settings: Settings;
+  kin: MockKinematics | undefined;
 }
 
-const EVENT_NAMES = ['capture:begin', 'capture:impact', 'capture:shatter', 'capture:end', 'attack:whoosh', 'summon', 'spell', 'move:step', 'castle', 'promotion'] as const;
+const EVENT_NAMES = ['capture:begin', 'capture:impact', 'capture:shatter', 'capture:end', 'attack:whoosh', 'summon', 'spell', 'move:step', 'castle', 'promotion', 'taunt', 'clash', 'weapon:drop', 'surrender'] as const;
 
-export function makeRig(move: MoveResult, setup: (board: MockBoard) => void, over: Partial<Settings> = {}, extra: { actorOpts?: ActorOpts; hang?: boolean; seatZ?: 1 | -1 } = {}): Rig {
+export function makeRig(move: MoveResult, setup: (board: MockBoard) => void, over: Partial<Settings> = {}, extra: { actorOpts?: ActorOpts; hang?: boolean; seatZ?: 1 | -1; kinematics?: boolean } = {}): Rig {
   const board = new MockBoard(extra.actorOpts);
   setup(board);
   const camera = new MockCamera(extra.seatZ ?? 1);
@@ -250,7 +287,8 @@ export function makeRig(move: MoveResult, setup: (board: MockBoard) => void, ove
   for (const n of EVENT_NAMES) bus.on(n, (payload) => events.push({ name: n, payload }));
   const settings: Settings = { ...DEFAULT_SETTINGS, ...over };
   if (extra.hang) camera.hangRestore = true;
-  return { ctx: { move, board, camera, fx, registry, bus, settings }, board, camera, fx, registry, bus, events, settings };
+  const kin = extra.kinematics ? new MockKinematics() : undefined;
+  return { ctx: { move, board, camera, fx, registry, bus, settings, kinematics: kin }, board, camera, fx, registry, bus, events, settings, kin };
 }
 
 export { Quaternion };

@@ -4,7 +4,7 @@ import {
   Object3D, Points, PointsMaterial, RingGeometry, Scene, Vector3,
 } from 'three';
 import type { WebGLRenderer, PerspectiveCamera } from 'three';
-import type { EmitOptions, Faction, FxApi, ParticlePreset, PieceActor, QualityTier, ShatterOptions } from '../../src/contracts';
+import type { EmitOptions, Faction, FxApi, GraphicsSettings, ParticlePreset, PieceActor, QualityTier, ShatterOptions } from '../../src/contracts';
 import type { SandboxActor } from './actor';
 
 const MAX = 1500;
@@ -48,6 +48,8 @@ export class SandboxFx implements FxApi {
     scene.add(this.points);
   }
   setQuality(_t: QualityTier) {}
+  setGraphics(_g: GraphicsSettings) {}
+  setStaticActors(_a: PieceActor[]) {}
 
   private spawn(preset: ParticlePreset, p: Vector3, dir: Vector3 | undefined, spread: number, speed: number, scale: number) {
     const st = STYLE[preset];

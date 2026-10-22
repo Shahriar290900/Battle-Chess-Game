@@ -4,9 +4,8 @@ import type { PieceActor, PromotionRole, Square } from '../contracts';
 import { restYaw, SIDE_FACTION, yawToward } from '../contracts';
 import { CameraDriver } from './cameraDriver';
 import { buildTravel, settleActor } from './moveSequence';
-import { clamp, flatDist, smoothstep, socketPos, wrapPi } from './common';
+import { clamp, flatDist, smoothstep, socketPos } from './common';
 import { FightFrame } from './fightFrame';
-import { ShatterJob } from './shatterJob';
 import { orbit360 } from './shots';
 import type { Stage } from './stage';
 
@@ -90,98 +89,98 @@ export function buildPromotion(stage: Stage, pawn: PieceActor | undefined, role:
   });
 }
 
-// ------------------------------------------------------------------ check
-const AURA_TINT = { emberhold: 0xff4a2a, rime: 0x66e6ff } as const;
+// ------------------------------------------------------------------ checkmate
+/** Nominal length of the surrender sequence (extended when many pieces surrender). */
+export const MATE_MIN_SECONDS = 4.2;
 
-export function buildCheck(stage: Stage, kingSquare: Square): void {
-  const { ctx } = stage;
-  const { board, fx, move } = ctx;
-  const king = board.actorAt(kingSquare);
-  if (!king) { stage.tl.set({}, {}, 0.01); return; }
-  const checker = board.actorAt(move.to);
-  const glancer = checker && checker !== king ? checker : null;
+/** Procedural surrender (no Surrender clip): lower the body, pitch forward, bow the head. Final values held. */
+const SURRENDER_POSE = { king: { dy: -0.38, rx: 0.42 }, other: { dy: -0.14, rx: 0.24 } } as const;
+const poseFor = (a: PieceActor) => (a.role === 'king' ? SURRENDER_POSE.king : SURRENDER_POSE.other);
 
-  if (glancer) {
-    const rest = restYaw(glancer.side);
-    const turn = clamp(wrapPi(yawToward(glancer.root.position, king.root.position) - rest) * 0.7, -1.1, 1.1);
-    stage.yaw(glancer, rest + turn, 0, 0.3, 'power2.out');
-    stage.yaw(glancer, rest, 1.1, 0.3, 'power2.inOut');
-  }
-  // king flinch
-  stage.poseClip(king, 'HitReact', 0.3, 0.25, 0.15);
-  stage.proxy(0.55, 0.3, 'power2.inOut', (p) => king.scrub('HitReact', king.clipDuration('HitReact') * 0.3 * (1 - p)));
-
-  const aura = () => fx.aura(socketPos(king, 'socket_head', new Vector3()), king.faction);
-  stage.at(0.3, aura);
-  stage.at(0.95, aura);
-  stage.at(0.2, () => board.tintSquare(kingSquare, AURA_TINT[king.faction]));
-  stage.tl.set({}, {}, 1.5);
-  stage.onSettle(() => {
-    board.tintSquare(kingSquare, null);
-    if (glancer) glancer.setYaw(restYaw(glancer.side));
-    king.play('Idle', { fade: 0 });
-  });
+function snapSurrender(a: PieceActor): void {
+  if (a.hasClip('Surrender')) { a.scrub('Surrender', a.clipDuration('Surrender')); return; }
+  const p = poseFor(a);
+  a.model.position.y = p.dy; a.model.rotation.x = p.rx;
 }
 
-// ------------------------------------------------------------------ checkmate
-export const MATE_ORBIT_SECONDS = 5.2;
-
+/**
+ * Checkmate: slow orbit around the mated king, who plays Surrender (kneels, held). Then, staggered 0.1-0.2 s,
+ * every other piece of the losing side surrenders its weapon (Surrender clip, or a procedural lowering plus a
+ * drop puff). Winners raise their weapons (Victory) and look at the fallen king. Nothing is shattered or removed.
+ */
 export function buildCheckmate(stage: Stage, kingSquare: Square): void {
   const { ctx, tl } = stage;
   const { board, camera, fx } = ctx;
   const king = board.actorAt(kingSquare);
   if (!king) { tl.set({}, {}, 0.01); return; }
-  const kingFaction = king.faction;
-  const winners = board.allActors().filter((a) => a.side !== king.side);
-  const job = new ShatterJob(stage, king);
-  job.prefetch();
+  const all = board.allActors();
+  const losers = all.filter((a) => a.side === king.side && a !== king)
+    .sort((a, b) => king.root.position.distanceTo(a.root.position) - king.root.position.distanceTo(b.root.position));
+  const winners = all.filter((a) => a.side !== king.side);
+  const step = clamp(1.6 / Math.max(1, losers.length), 0.1, 0.2);
+  const KING_AT = 0.35; const LOSERS_AT = 0.95; const CLIP_CAP = 1.8;
+  const duration = Math.max(MATE_MIN_SECONDS, LOSERS_AT + losers.length * step + CLIP_CAP + 0.4);
   const K = king.root.position.clone();
+  const kingPoint = new Vector3(K.x, 0.5, K.z);
+  const winnerFaction = SIDE_FACTION[king.side === 'w' ? 'b' : 'w'];
 
+  // ---- camera: slow full orbit around the king + lighting + occluder fading
   let driver: CameraDriver | null = null;
   let restoreStarted = false;
   try {
     driver = new CameraDriver(camera.borrow(), () => board.allActors());
     const cp = camera.camera.position;
-    driver.setCues([{ at: 0, shot: orbit360(() => king.root.position, MATE_ORBIT_SECONDS, Math.atan2(cp.x - K.x, cp.z - K.z), 3.4) }], 0.8);
+    driver.setCues([{ at: 0, shot: orbit360(() => king.root.position, duration, Math.atan2(cp.x - K.x, cp.z - K.z), 3.8) }], 0.8);
   } catch (e) { console.warn('[cinematics] camera.borrow failed', e); }
-  const bystanders = board.allActors().filter((a) => a !== king);
+  const bystanders = all.filter((a) => a !== king);
   const frame = new FightFrame(stage, {
-    driver, keyFaction: SIDE_FACTION[king.side === 'w' ? 'b' : 'w'], rimFaction: kingFaction,
+    driver, keyFaction: winnerFaction, rimFaction: king.faction,
     focus: () => [king.root.position], bystanders: () => bystanders,
   });
   frame.fadeIn(0, 0.4);
-  frame.fadeOut(MATE_ORBIT_SECONDS - 0.6, 0.5);
+  frame.fadeOut(duration - 0.6, 0.5);
   tl.eventCallback('onUpdate', () => frame.update(tl.time()));
-  const startRestore = (duration: number) => {
+  const startRestore = (d: number) => {
     if (restoreStarted || !driver) return;
     restoreStarted = true; driver.released = true; frame.release();
-    stage.safe(() => { stage.track(camera.restore(duration)); });
+    stage.safe(() => { stage.track(camera.restore(d)); });
   };
 
-  // the king drops to a knee (HitReact held), cracks spread over 1.5 s
-  stage.poseClip(king, 'HitReact', 0.6, 0.2, 0.6);
-  stage.at(0.4, () => {
-    stage.safe(() => fx.sweep(king, kingFaction === 'emberhold' ? 'ember' : 'frost', 1.5));
-    fx.decal(K.clone(), 'crack');
-  });
-  stage.at(1.2, () => fx.emit(kingFaction === 'emberhold' ? 'embers' : 'iceGlitter', K.clone().setY(0.8), { count: 20, scale: 0.8 }));
-  // winners celebrate (staggered; capped clip length keeps phones light)
+  // ---- the mated king surrenders and kneels
+  const dropEvent = (a: PieceActor) => stage.bus('weapon:drop', { faction: a.faction, role: a.role });
+  const surrender = (a: PieceActor, at: number): number => {
+    if (a.hasClip('Surrender')) {
+      const end = stage.clip(a, 'Surrender', at, CLIP_CAP);
+      const dur = end - at;
+      stage.at(at + dur * 0.6, () => { dropEvent(a); fx.emit('dustPuff', socketPos(a, 'socket_weapon_R', new Vector3()).setY(0.05), { count: 4, scale: 0.5 }); });
+      return end;
+    }
+    const p = poseFor(a);
+    const dur = a.role === 'king' ? 0.8 : 0.5;
+    stage.proxy(at, dur, 'power2.out', (u) => { a.model.position.y = p.dy * u; a.model.rotation.x = p.rx * u; });
+    stage.at(at + 0.2, () => { dropEvent(a); fx.emit('dustPuff', socketPos(a, 'socket_weapon_R', new Vector3()).setY(0.05), { count: 4, scale: 0.5 }); });
+    return at + dur;
+  };
+  stage.at(KING_AT, () => stage.bus('surrender', { side: king.side }));
+  stage.at(KING_AT, () => stage.warp.play({ segments: [{ scale: 0.6, seconds: 1.1 }], ramp: 0.7 }));
+  const kingEnd = surrender(king, KING_AT);
+  stage.at(KING_AT + 0.7, () => { camera.shake(0.3); fx.emit('dustPuff', K.clone().setY(0.05), { count: 10, scale: 1 }); });
+
+  // ---- every other piece of the losing side drops its weapon, staggered
+  let lastEnd = kingEnd;
+  losers.forEach((a, i) => { lastEnd = Math.max(lastEnd, surrender(a, LOSERS_AT + i * step)); });
+
+  // ---- winners raise their weapons and look at the fallen king
   winners.forEach((w, i) => stage.clip(w, 'Victory', 0.5 + (i % 8) * 0.06, 1.6));
-  // it crumbles in slow motion
-  const crumbleAt = 2.4;
-  stage.at(crumbleAt, () => {
-    stage.warp.play({ segments: [{ scale: 0.3, seconds: 1.4 }], ramp: 0.8 });
-    camera.shake(0.6);
-    fx.flash(king);
-    job.run({ impulseDir: new Vector3(0, 0.3, 1).normalize(), magnitude: 1.2 });
-  });
-  stage.at(MATE_ORBIT_SECONDS - 0.9, () => startRestore(1.0));
-  tl.set({}, {}, MATE_ORBIT_SECONDS);
+  if (stage.hasKinematics) stage.at(0.3, () => { for (const w of winners) stage.look(w, kingPoint, 0.8); });
+
+  stage.at(duration - 0.9, () => startRestore(0.9));
+  tl.set({}, {}, Math.max(duration, lastEnd + 0.2));
   stage.onSettle((reason) => {
-    job.settle(reason);
-    board.tintSquare(kingSquare, null);
+    // final, held state: the losing side kneels / has dropped its weapons; nothing is removed or shattered
+    for (const a of [king, ...losers]) snapSurrender(a);
     for (const w of winners) { w.setYaw(restYaw(w.side)); w.play('Idle', { fade: 0 }); }
-    // skip/watchdog: snap the camera back instantly, even if a restore tween is already in flight
+    board.tintSquare(kingSquare, null);
     if (driver && (!restoreStarted || reason !== 'complete')) { restoreStarted = true; driver.released = true; stage.safe(() => { stage.track(camera.restore(reason === 'complete' ? 0.4 : 0)); }); }
   });
 }
