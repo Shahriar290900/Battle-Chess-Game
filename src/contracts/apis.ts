@@ -76,6 +76,8 @@ export interface PieceActor {
   /** 0 = normal, 1 = fully dimmed (board dim during captures). */
   setDim(amount: number): void;
   setHighlight(on: boolean): void;
+  /** Occluder fade for cinematics: 1 = opaque, 0 = hidden (dithered/transparent, no shadow). */
+  setFade(alpha: number): void;
   /** Queens: scale of weapon_summon node (0 hidden … 1 shown). */
   setWeaponSummon(scale: number): void;
   update(dt: number): void;
