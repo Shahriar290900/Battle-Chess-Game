@@ -102,6 +102,8 @@ async function boot(): Promise<void> {
     const post = createGuardedPost(kit.renderer, kit.scene, rig.camera, startTier);
     const fx = createFx();
     const kinematics = createKinematics();
+    // Optional extension (not in KinematicsApi): enables distance/behind-camera culling.
+    (kinematics as { setCamera?: (c: typeof rig.camera) => void }).setCamera?.(rig.camera);
     rig.setMode(settings.get().cameraMode);
 
     const resize = () => {
