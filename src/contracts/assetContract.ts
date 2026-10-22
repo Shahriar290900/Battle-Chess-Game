@@ -93,3 +93,14 @@ export const PALETTE = {
 export const FRAGMENT_COUNT: Record<Role, number> = {
   pawn: 20, rook: 30, knight: 30, bishop: 30, queen: 40, king: 40,
 };
+
+/** Uniform scale of pieces standing on the board (pedestal Ø0.8 → ~0.66) so neighbours don't overlap.
+ *  Cinematics may tween fighters toward 1.0 during a capture close-up and back afterwards. */
+export const BOARD_PIECE_SCALE = 0.82;
+/** Scale of captured pieces displayed kneeling (Surrender end pose) on the side ledges. */
+export const GRAVEYARD_PIECE_SCALE = 0.55;
+
+export const CREDITS = {
+  developer: 'M Al Shahriar Hameem',
+  email: 'shahriar.hameem@gmail.com',
+} as const;

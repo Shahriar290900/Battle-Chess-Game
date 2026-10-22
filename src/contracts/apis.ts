@@ -41,6 +41,9 @@ export const GRAPHICS_PRESETS: Record<QualityTier, GraphicsSettings> = {
   low: { preset: 'low', resolutionScale: 0.75, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false, fpsCap: 30 },
 };
 
+/** Legal-move / selection / last-move tile highlight style (settings → Gameplay). */
+export type HighlightStyle = 'glow' | 'brackets' | 'tint' | 'runes';
+
 export interface Settings {
   cameraMode: CameraMode;
   captureMode: CaptureMode;
@@ -59,12 +62,15 @@ export interface Settings {
   playerSide: Side;
   /** First-launch tutorial already offered/completed. */
   tutorialSeen: boolean;
+  highlightStyle: HighlightStyle;
+  /** Highlight strength 0.3–1. */
+  highlightIntensity: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   cameraMode: 'follow', captureMode: 'full', animSpeed: 1, quality: 'auto', graphics: { ...GRAPHICS_PRESETS.medium },
   musicEnabled: true, musicVolume: 0.55, sfxVolume: 0.8, colorBlind: false,
-  showMoveList: true, aiLevel: 'medium', playerSide: 'w', tutorialSeen: false,
+  showMoveList: true, aiLevel: 'medium', playerSide: 'w', tutorialSeen: false, highlightStyle: 'glow', highlightIntensity: 0.8,
 };
 
 export interface SettingsStore {
