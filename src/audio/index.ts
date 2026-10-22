@@ -2,6 +2,7 @@
 import type { AudioBus, EventBus, SfxName } from '../contracts';
 import { SIDE_FACTION } from '../contracts';
 import { createSfx, type SfxPlayer } from './sfx';
+import { createScore, type Score } from './score';
 
 const DB_NAME = 'battle-chess';
 const STORE = 'audio';
@@ -65,6 +66,8 @@ export function createAudioBus(): AudioBus {
   let hidden = false;
   let sourceReady: Promise<void> | null = null;
   let unlocked = false;
+  let score: Score | null = null;
+  let duckTimer: ReturnType<typeof setTimeout> | null = null;
 
   const musicTarget = () => (musicOn && !hidden ? musicVol * duck : 0);
 
@@ -105,15 +108,29 @@ export function createAudioBus(): AudioBus {
     if (blob) setSource(URL.createObjectURL(blob), true);
   }
 
+  /** Start whichever source is active: file track if present, else the generated score. */
   function playMusic(): void {
-    if (!el || !hasTrack || !musicOn || hidden) return;
-    el.play().then(() => fadeTo(musicTarget())).catch(() => { /* blocked until a gesture */ });
+    if (!ctx || !musicOn || hidden) return;
+    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
+    if (hasTrack && el) {
+      score?.stop();
+      if (el.paused) el.play().catch(() => { /* retried on next gesture/event */ });
+      fadeTo(musicTarget());
+    } else if (score) {
+      score.start();
+      fadeTo(musicTarget());
+    }
+  }
+
+  function stopMusic(): void {
+    score?.stop();
+    el?.pause();
   }
 
   function onVisibility(hide: boolean): void {
     hidden = hide;
-    if (!el) return;
-    if (hide) { fadeTo(0, 0.2); el.pause(); } else { playMusic(); fadeTo(musicTarget(), 0.6); }
+    if (!ctx) return;
+    if (hide) { fadeTo(0, 0.2); stopMusic(); } else { void ctx?.resume().catch(() => {}); playMusic(); fadeTo(musicTarget(), 0.6); }
   }
 
   const d = typeof document !== 'undefined' ? document : null;
@@ -138,6 +155,7 @@ export function createAudioBus(): AudioBus {
         musicGain.gain.value = 0;
         musicGain.connect(comp);
         sfxPlayer = createSfx(ctx, sfxOut);
+        score = createScore(ctx, musicGain);
         sourceReady = resolveSource();
       }
       if (ctx && ctx.state !== 'running') await ctx.resume().catch(() => {});
@@ -152,7 +170,7 @@ export function createAudioBus(): AudioBus {
     setMusicEnabled(on) {
       musicOn = on;
       if (on) { playMusic(); fadeTo(musicTarget()); }
-      else { fadeTo(0, 0.5); const a = el; setTimeout(() => { if (!musicOn) a?.pause(); }, 550); }
+      else { fadeTo(0, 0.5); setTimeout(() => { if (!musicOn) stopMusic(); }, 600); }
     },
 
     setVolumes(music, sfx) {
@@ -162,6 +180,7 @@ export function createAudioBus(): AudioBus {
       fadeTo(musicTarget(), 0.15);
     },
 
+    /** True only for file tracks (theme / custom); the generated score does not count. */
     hasMusic: () => hasTrack,
 
     async loadCustomTrack(file) {
@@ -176,8 +195,10 @@ export function createAudioBus(): AudioBus {
     attach(eb: EventBus) {
       eb.on('move:step', (e) => bus.sfx(`move:step:${e.faction}`));
       eb.on('attack:whoosh', (e) => bus.sfx(`attack:whoosh:${e.role}`));
-      eb.on('capture:begin', () => { duck = DUCK; fadeTo(musicTarget(), 0.4); });
-      eb.on('capture:end', () => { duck = 1; fadeTo(musicTarget(), 0.9); });
+      const unduck = () => { if (duckTimer) clearTimeout(duckTimer); duckTimer = null; duck = 1; fadeTo(musicTarget(), 0.9); };
+      eb.on('capture:begin', () => { duck = DUCK; fadeTo(musicTarget(), 0.4); if (duckTimer) clearTimeout(duckTimer); duckTimer = setTimeout(unduck, 25000); });
+      eb.on('capture:end', unduck);
+      eb.on('game:start', unduck);
       eb.on('capture:impact', (e) => bus.sfx(`impact:${e.defenderFaction}`, { volume: e.heavy ? 1 : 0.75 }));
       eb.on('capture:shatter', (e) => bus.sfx(`shatter:${e.defenderFaction}`));
       eb.on('summon', (e) => bus.sfx(`summon:${e.faction}`));
@@ -190,5 +211,12 @@ export function createAudioBus(): AudioBus {
       eb.on('ui:click', () => bus.sfx('ui:click'));
     },
   };
+  // Diagnostics for sandbox/tests (not part of the AudioBus contract).
+  Object.assign(bus, {
+    debug: () => ({
+      kind: hasTrack ? 'file' : 'score', state: ctx?.state, paused: el?.paused, loop: el?.loop, currentTime: el?.currentTime ?? 0,
+      scoreRunning: score?.running ?? false, ctxTime: ctx?.currentTime ?? 0, gain: musicGain?.gain.value ?? 0, duck, hidden,
+    }),
+  });
   return bus;
 }
