@@ -15,6 +15,10 @@ export interface Lighting {
   rim: DirectionalLight;
   setShadowSize(px: number): void;
   setShadowsEnabled(on: boolean): void;
+  /** 'off' disables the key light's shadow, 'low' = 1024 map, 'high' = 2048. */
+  setShadows(level: 'off' | 'low' | 'high'): void;
+  /** Ambient life: motes, braziers and fog density. */
+  setAmbient(on: boolean): void;
   /** Brazier point lights are skipped on the Low tier (emissive flames remain). */
   setTier(tier: QualityTier): void;
   /** Flicker the braziers (real seconds). */
@@ -157,7 +161,7 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
     post.castShadow = true; bowl.castShadow = true;
     g.add(post, bowl);
     const col = warm ? new Color(1.0, 0.42, 0.1) : new Color(0.25, 0.7, 1.0);
-    for (const [w, h, y, ph, op] of [[1.1, 2.0, 2.35, 0, 0.85], [2.6, 3.4, 2.5, 1.7, 0.28]] as const) {
+    for (const [w, h, y, ph, op] of [[0.9, 1.7, 2.35, 0, 0.8], [1.7, 2.4, 2.45, 1.7, 0.16]] as const) {
       const mat = new SpriteMaterial({ map: glow, color: col, transparent: true, opacity: op, blending: AdditiveBlending, depthWrite: false, fog: false });
       const f = new Sprite(mat);
       f.scale.set(w, h, 1);
@@ -239,14 +243,16 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
   motes.renderOrder = 5;
   scene.add(motes);
   let lightsOn = true;
+  let ambientOn = true;
+  let tierMotes = true;
 
-  return {
+  const api: Lighting = {
     key, rim,
     setTier(tier) {
-      motes.visible = tier !== 'low';
+      tierMotes = tier !== 'low';
       moteGeo.setDrawRange(0, tier === 'high' ? MOTES : 150);
       lightsOn = tier !== 'low';
-      for (const l of lights) l.visible = lightsOn;
+      api.setAmbient(ambientOn);
     },
     update(time, camZ = 10) {
       moteMat.uniforms.uTime.value = time;
@@ -266,6 +272,18 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
       key.shadow.map = null;
     },
     setShadowsEnabled(on) { key.castShadow = on; },
+    setShadows(level) {
+      key.castShadow = level !== 'off';
+      if (level !== 'off') api.setShadowSize(level === 'high' ? 2048 : 1024);
+    },
+    setAmbient(on) {
+      ambientOn = on;
+      hall.visible = on;
+      motes.visible = on && tierMotes;
+      for (const l of lights) l.visible = on && lightsOn;
+      (scene.fog as FogExp2).density = on ? 0.022 : 0.009;
+    },
     dispose() { envRT.dispose(); },
   };
+  return api;
 }

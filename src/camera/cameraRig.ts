@@ -13,6 +13,8 @@ import { squareToWorld } from '../contracts';
 
 export interface CameraRigImpl extends CameraRig {
   readonly seat: Side;
+  /** Reserve screen space (px) at the bottom for the HUD device; the board is fitted above it. */
+  setReserve(bottomPx: number): void;
   /** Animation-speed multiplier for the turn swing (settings.animSpeed). */
   setSpeed(speed: number): void;
   /** Suspend OrbitControls while a piece is being dragged. */
@@ -59,6 +61,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
   let restoreResolve: (() => void) | null = null;
   let locked = false;
   let speed = 1;
+  let reserve = 0;
   let time = 0;
   let trauma = 0;
   const offset = new Vector3();
@@ -77,7 +80,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
   controls.target.copy(TARGET);
 
   // -------------------------------------------------------------- pose maths
-  function fitRadius(polar: number, aspect: number, limX: number, limY: number): number {
+  function fitRadius(polar: number, aspect: number, limX: number, limHi: number, limLo: number = -limHi): number {
     probe.aspect = aspect;
     probe.updateProjectionMatrix();
     let lo = 5, hi = 60;
@@ -89,7 +92,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
       let ok = true;
       for (const p of FIT_POINTS) {
         tmp.copy(p).project(probe);
-        if (Math.abs(tmp.x) > limX || Math.abs(tmp.y) > limY || tmp.z > 1) { ok = false; break; }
+        if (Math.abs(tmp.x) > limX || tmp.y > limHi || tmp.y < limLo || tmp.z > 1) { ok = false; break; }
       }
       if (ok) hi = r; else lo = r;
     }
@@ -103,20 +106,22 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
     seatPolar = PORTRAIT_POLAR + (LANDSCAPE_POLAR - PORTRAIT_POLAR) * k;
     const limX = aspect > 1.05 ? 0.9 : 0.96;
     const limY = aspect > 1.05 ? 0.92 : 0.82;
+    const limLo = Math.min(-limY + (2 * reserve) / height, limY - 0.5);
+    const goal = (limLo + limY) / 2;
     // Fit the radius, then nudge the look-at height until the board (frame corners) is vertically centred.
     TARGET.y = 0.3;
     for (let i = 0; i < 4; i++) {
-      seatRadius = fitRadius(seatPolar, aspect, limX, limY);
+      seatRadius = fitRadius(seatPolar, aspect, limX, limY, limLo);
       probe.position.set(0, TARGET.y + seatRadius * Math.cos(seatPolar), seatRadius * Math.sin(seatPolar));
       probe.lookAt(TARGET);
       probe.updateMatrixWorld(true);
       let lo = Infinity, hi = -Infinity;
       for (const p of FRAME_POINTS) { tmp.copy(p).project(probe); lo = Math.min(lo, tmp.y); hi = Math.max(hi, tmp.y); }
-      const mid = (lo + hi) / 2;
+      const mid = (lo + hi) / 2 - goal;
       TARGET.y = Math.min(Math.max(TARGET.y + mid * seatRadius * Math.tan((FOV * DEG) / 2) * 0.9, -1.5), 1.5);
     }
-    seatRadius = fitRadius(seatPolar, aspect, limX, limY);
-    topRadius = fitRadius(TOP_POLAR, aspect, limX, limY);
+    seatRadius = fitRadius(seatPolar, aspect, limX, limY, limLo);
+    topRadius = fitRadius(TOP_POLAR, aspect, limX, limY, limLo);
     controls.maxDistance = Math.max(30, seatRadius * 1.8);
     controls.target.copy(TARGET);
   }
@@ -293,6 +298,13 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
       if (!swing && !borrowed) {
         if (rig.mode !== 'free') { proxy.polar = modePolar(); proxy.radius = modeRadius(); }
       }
+    },
+
+    setReserve(px) {
+      const n = Math.max(0, Math.round(px));
+      if (n === reserve) return;
+      reserve = n;
+      api.resize(width, height);
     },
 
     setSpeed(v) { speed = Math.min(Math.max(v, 0.25), 4); swing?.timeScale(speed); },

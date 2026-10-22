@@ -13,7 +13,7 @@ import { makeContactShadowTexture } from '../render/boardTextures';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { AssetId, ClipName, Faction, PieceActor, PieceExtras, Role, Side, SocketName, Square, Timeline } from '../contracts';
 import {
-  CLIPS, DEFAULT_EXTRAS, DISPLAY_NAME, FACTION_SIDE, LOOPING_CLIPS, ROLE_HEIGHT, SOCKETS, WEAPON_SUMMON_NODE,
+  CLIPS, OPTIONAL_CLIPS, DEFAULT_EXTRAS, DISPLAY_NAME, FACTION_SIDE, LOOPING_CLIPS, ROLE_HEIGHT, SOCKETS, WEAPON_SUMMON_NODE,
   CONTRACT_VERSION, lodName, restYaw, squareToWorld,
 } from '../contracts';
 
@@ -161,9 +161,10 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
   // ---- animation
   const mixer = new AnimationMixer(model);
   const actions = new Map<ClipName, AnimationAction>();
-  for (const name of CLIPS) {
+  for (const name of [...CLIPS, ...OPTIONAL_CLIPS] as ClipName[]) {
     const clip = template.animations.find((c) => c.name === name);
     if (clip) actions.set(name, mixer.clipAction(clip));
+    else if ((OPTIONAL_CLIPS as readonly string[]).includes(name)) continue; // optional clips: no error
     else contractError(`${id}: missing clip ${name}; using procedural fallback`);
   }
   let mode: 'free' | 'scrub' = 'free';

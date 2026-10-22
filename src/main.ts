@@ -1,19 +1,31 @@
 // Composition root: renderer + scene → post → fx → assets → board → camera → cinematics → audio → platform → controller → UI.
+//
+// `services` (built below) is the documented hand-off to optional feature modules such as src/learn:
+//   createLearn(services) from src/learn/index.ts, when that file exists, is called once after loading and its
+//   open(kind) is wired to the "How to Play" / "Piece Library" books and the first-launch prompt.
+//   AppServices = { scene, renderer, camera (CameraRig), registry, board, sequences, fx, audio, kinematics,
+//                   settings, bus, post, controller, attract }.
+// Loading is driven by real work and reported on the bus as `loading:progress` ({loaded, total=100, stage}).
 import { gsap } from 'gsap';
-import { Raycaster, Vector2 } from 'three';
-import { bus, SIDE_FACTION, type QualityTier } from './contracts';
-import { createAssetRegistry } from './assets/registry';
+import { Raycaster, Vector2, type PerspectiveCamera, type Scene, type WebGLRenderer } from 'three';
+import {
+  bus, SIDE_FACTION, type AttractContext, type AttractMode, type AudioBus, type BoardApi, type CameraRig, type EventBus, type FxApi,
+  type GameModeConfig, type KinematicsApi, type QualityTier, type SequencePlayer, type SettingsStore,
+} from './contracts';
+import { createAssetRegistry, type AssetRegistryImpl } from './assets/registry';
 import { createCameraRig } from './camera/cameraRig';
-import { createSequencePlayer } from './cinematics';
+import * as cinematics from './cinematics';
 import { createAudioBus } from './audio';
 import { createAiPlayer } from './core/ai';
-import { createGameController } from './core/game';
+import { createGameController, type GameController } from './core/game';
 import { createLivePresenter } from './core/livePresenter';
 import { START_FEN } from './core/rules';
 import { createSettingsStore } from './core/settings';
 import { createFx } from './fx';
+import { createKinematics } from './kinematics';
 import { createPlatform } from './platform';
 import { createBoard } from './render/board';
+import { applyGraphics, createFpsOverlay } from './render/graphics';
 import { createLighting, prewarmCinematicLights } from './render/lighting';
 import { createMarkers } from './render/markers';
 import { createGuardedPost } from './render/postGuard';
@@ -23,12 +35,54 @@ import { createBoardInput } from './ui/boardInput';
 import { createUi } from './ui';
 import { createPromotionPicker } from './ui/panels';
 import { createLoadingScreen } from './ui/screens';
+import { installSkin } from './ui/skin';
+
+/** Everything a feature module (src/learn, ...) may need. */
+export interface AppServices {
+  scene: Scene;
+  renderer: WebGLRenderer;
+  camera: CameraRig & { readonly camera: PerspectiveCamera };
+  registry: AssetRegistryImpl;
+  board: BoardApi;
+  sequences: SequencePlayer;
+  fx: FxApi;
+  audio: AudioBus;
+  kinematics: KinematicsApi;
+  settings: SettingsStore;
+  bus: EventBus;
+  controller: GameController;
+  attract: AttractMode | null;
+}
+
+type LearnKind = 'tutorial' | 'howto' | 'library';
+const learnModules = import.meta.glob('./learn/index.ts', { eager: true }) as Record<string, { createLearn?: (s: AppServices) => { open?(k: LearnKind): void; start?(k: LearnKind): void } | undefined }>;
+
+/** Weighted loading stages; progress is reported on the bus so any UI can show it. */
+function createLoadTracker(b: EventBus, stages: Array<[name: string, weight: number]>) {
+  const total = stages.reduce((n, s) => n + s[1], 0);
+  let done = 0;
+  return {
+    /** Run one stage; `work` reports its own 0..1 progress. */
+    async run<T>(index: number, work: (report: (f: number) => void) => Promise<T> | T): Promise<T> {
+      const [name, weight] = stages[index];
+      const emit = (f: number) => b.emit('loading:progress', { loaded: Math.round(((done + weight * Math.min(Math.max(f, 0), 1)) / total) * 100), total: 100, stage: name });
+      emit(0);
+      const out = await work(emit);
+      done += weight;
+      emit(1);
+      return out;
+    },
+    reset() { done = 0; },
+  };
+}
 
 async function boot(): Promise<void> {
+  installSkin();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const uiRoot = document.getElementById('ui-root') as HTMLElement;
   const loading = createLoadingScreen();
   uiRoot.append(loading.el);
+  bus.on('loading:progress', (e) => loading.setProgress(e.loaded / e.total, e.stage));
 
   try {
     gsap.ticker.lagSmoothing(500, 33);
@@ -39,18 +93,15 @@ async function boot(): Promise<void> {
     const step = (name: string) => console.debug(`[boot] ${name}`);
     const startTier: QualityTier = forced === 'low' || forced === 'medium' || forced === 'high' ? forced : settings.get().quality !== 'auto' ? (settings.get().quality as QualityTier) : platform.isMobile ? 'low' : 'medium';
 
-    // ---- renderer, camera, lighting, post, fx
+    // ---- renderer, camera, lighting, post
     step('renderer');
     const kit = createRenderKit(canvas);
     kit.setPixelRatioCap(PIXEL_RATIO_CAP[startTier]);
     const rig = createCameraRig(canvas, { aspect: window.innerWidth / window.innerHeight });
-    step('lighting');
     const lighting = createLighting(kit.scene, kit.renderer);
     const post = createGuardedPost(kit.renderer, kit.scene, rig.camera, startTier);
-    step('fx');
     const fx = createFx();
-    await fx.init(kit.scene, kit.renderer, rig.camera);
-    fx.setQuality(startTier);
+    const kinematics = createKinematics();
     rig.setMode(settings.get().cameraMode);
 
     const resize = () => {
@@ -82,80 +133,127 @@ async function boot(): Promise<void> {
     window.addEventListener('keydown', unlock, { once: true, capture: true });
     void platform.init().catch((e) => console.warn('[platform] init failed', e));
 
-    // ---- assets
-    step('assets');
+    // ---- game objects (created up front; loading fills them)
     const registry = createAssetRegistry();
-    await registry.preload((n, total) => loading.setProgress((n / total) * 0.9, `Casting the hosts… ${n}/${total}`));
-    registry.lod = startTier === 'low' ? 1 : 0;
-    step('board');
-    const board = createBoard({ scene: kit.scene, registry, textureSize: platform.isMobile ? 1024 : 2048 });
-    const markers = createMarkers(kit.scene);
-    board.syncToFen(START_FEN);
-    loading.setProgress(0.93, 'Lighting the braziers…');
-
-    // ---- game
-    step('game');
-    const sequences = createSequencePlayer();
     const ai = createAiPlayer();
+    const sequences = cinematics.createSequencePlayer();
     const promotion = createPromotionPicker();
+    const tracker = createLoadTracker(bus, [['Forging pieces…', 35], ['Raising the hall…', 25], ['Tempering shaders…', 22], ['Waking the oracle…', 8], ['Tuning the lute…', 10]]);
+
+    // ================= real loading work =================
+    step('assets');
+    await tracker.run(0, async (report) => {
+      await registry.preload((n, total) => report(n / total));
+    });
+    registry.lod = startTier === 'low' ? 1 : 0;
+
+    step('board');
+    const board = createBoard({ scene: kit.scene, registry, textureSize: platform.isMobile ? 1024 : 2048, kinematics });
+    const markers = createMarkers(kit.scene);
+    await tracker.run(1, async (report) => {
+      await fx.init(kit.scene, kit.renderer, rig.camera); // includes physics (rapier) init
+      fx.setQuality(startTier);
+      report(0.2);
+      board.syncToFen(START_FEN);
+      fx.setStaticActors?.(board.allActors());
+      report(0.4);
+      await registry.warmFragments((n, total) => report(0.4 + 0.6 * (n / total)));
+    });
+
     const presenter = createLivePresenter({
-      board, camera: rig, fx, registry, sequences, bus, settings,
+      board, camera: rig, fx, registry, sequences, kinematics, bus, settings,
       choosePromotion: (side) => promotion.choose(side), cancelPromotion: () => promotion.cancel(),
     });
     const controller = createGameController({ presenter, ai, bus, settings });
     controller.setPhase('loading');
 
-    const startGame = (config: Parameters<typeof controller.newGame>[0]) => {
-      void controller.newGame(config);
-      void registry.warmFragments();
+    const gfxDeps = { settings, kit, lighting, post, fx, board, kinematics, tier: () => quality.tier };
+    const quality = createQuality({
+      kit, lighting, board, fx, post, platform, settings,
+      renderFrame: (dt) => { board.update(dt); rig.update(dt); post.render(dt); },
+      applyGraphics: () => applyGraphics(gfxDeps),
+    });
+    let benchmarking = false;
+    await tracker.run(2, async (report) => {
+      if (forced) quality.apply(startTier);
+      else {
+        benchmarking = true;
+        try { await quality.resolve(); } finally { benchmarking = false; }
+      }
+      report(0.4);
+      // Compile every material for the final light state, then for the cinematic spotlight rig (+3 lights).
+      try { await kit.renderer.compileAsync(kit.scene, rig.camera); } catch { /* older drivers: first frame compiles */ }
+      report(0.7);
+      prewarmCinematicLights(kit.scene, () => post.render(0));
+      report(1);
+    });
+    await tracker.run(3, async () => { await ai.init().catch((e) => console.warn('[ai] init failed (fallback engine will be used)', e)); });
+    await tracker.run(4, async () => { syncAudio(); }); // audio decode starts on the first gesture (autoplay policy)
+
+    // ---- attract mode (launch flyover behind the menu) and the Learn area: optional modules, feature-checked
+    const createAttract = (cinematics as unknown as { createAttract?: (c: AttractContext) => AttractMode }).createAttract;
+    const attract: AttractMode | null = createAttract
+      ? createAttract({ board, camera: rig, fx, registry, bus, settings: settings.get(), kinematics, sequences })
+      : null;
+
+    const services: AppServices = { scene: kit.scene, renderer: kit.renderer, camera: rig, registry, board, sequences, fx, audio, kinematics, settings, bus, controller, attract };
+    const learnMod = Object.values(learnModules)[0];
+    const learn = learnMod?.createLearn?.(services);
+    const learnApi = learn ? { open: (k: LearnKind) => (learn.open ?? learn.start)?.call(learn, k) } : undefined;
+
+    // ---- entering a game: stop the flyover, show the loading screen, do the real per-game work, then start
+    const enterGame = async (config: GameModeConfig) => {
+      loading.show('Preparing the field…');
+      const t = createLoadTracker(bus, [['Clearing the field…', 20], ['Raising the hall…', 30], ['Tempering shaders…', 30], ['Waking the oracle…', 20]]);
+      await t.run(0, async () => { await attract?.stop(); });
+      await t.run(1, async (report) => { await registry.warmFragments((n, total) => report(n / total)); });
+      await t.run(2, async () => { try { await kit.renderer.compileAsync(kit.scene, rig.camera); } catch { /* ignore */ } });
+      await t.run(3, async () => { if (config.kind === 'vs-ai') await ai.init().catch(() => undefined); });
+      await controller.newGame(config);
+      loading.hide();
     };
-    const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, onStart: startGame });
+
+    const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, onStart: (c) => { void enterGame(c); }, learn: learnApi });
     platform.onBack(() => ui.handleBack());
     createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
+    ui.hud.onLayout((px) => rig.setReserve(px));
 
     // ---- settings fan-out
     // Cinematics owns gsap.globalTimeline.timeScale (hit-stop/slow-mo); animSpeed only drives our own tweens.
     rig.setSpeed(settings.get().animSpeed);
+    const fps = createFpsOverlay(uiRoot);
+    fps.setVisible(settings.get().graphics.showFps);
     settings.subscribe((s, key) => {
       if (key === 'cameraMode') rig.setMode(s.cameraMode);
       else if (key === 'animSpeed') rig.setSpeed(s.animSpeed);
       else if (key === 'musicEnabled' || key === 'musicVolume' || key === 'sfxVolume') syncAudio();
+      else if (key === 'graphics') { applyGraphics(gfxDeps); fps.setVisible(s.graphics.showFps); }
     });
 
-    // ---- render loop (GSAP ticker: tweens update first, then we render the same frame)
-    let benchmarking = false;
+    // ---- render loop (GSAP ticker: tweens update first, then we render the same frame). The FPS cap skips frames.
+    let acc = 0;
     gsap.ticker.add((time, deltaMs) => {
       if (benchmarking) return;
-      const dt = Math.min(deltaMs / 1000, 0.1);
+      acc += deltaMs / 1000;
+      const cap = settings.get().graphics.fpsCap;
+      if (cap > 0 && acc < 1 / cap - 0.004) return;
+      const dt = Math.min(acc, 0.1);
+      acc = 0;
       const ts = gsap.globalTimeline.timeScale();
       fx.update(dt * ts);
       board.update(dt * ts);
+      kinematics.update(dt * ts); // after mixers and the cinematics tweens
       markers.update(time);
       lighting.update(time, rig.camera.position.z);
       rig.update(dt);
       post.render(dt);
+      fps.frame(dt);
     });
-
-    // ---- quality (2 s benchmark on desktop; mobile → low)
-    const quality = createQuality({
-      kit, lighting, board, fx, post, platform, settings,
-      renderFrame: (dt) => { board.update(dt); rig.update(dt); post.render(dt); },
-    });
-    loading.setProgress(0.96, 'Measuring the hall…');
-    step('quality');
-    if (forced) quality.apply(startTier);
-    else {
-      benchmarking = true;
-      try { await quality.resolve(); } finally { benchmarking = false; }
-    }
-    // Compile shaders for the cinematic spotlight rig now so the first capture does not hitch.
-    prewarmCinematicLights(kit.scene, () => post.render(0));
-    step('ready');
 
     // ---- debug / test hook
     if (import.meta.env.DEV || params.has('debug')) {
       (window as unknown as Record<string, unknown>).__bc = {
-        controller, rig, board, ui, settings, quality, bus, kit, post, fx, lighting, markers,
+        controller, rig, board, ui, settings, quality, bus, kit, post, fx, lighting, markers, services, attract,
         squareToScreen: (sq: string) => rig.projectSquare(sq),
         pick: (x: number, y: number) => {
           const r = canvas.getBoundingClientRect();
@@ -168,10 +266,12 @@ async function boot(): Promise<void> {
       };
     }
 
+    step('ready');
     controller.setPhase('menu');
-    await loading.showGate();
+    await loading.showGate(); // the tap is also the audio-unlock gesture and starts the flyover
     unlock();
     loading.hide();
+    attract?.start();
     ui.showMenu();
   } catch (err) {
     console.error('[boot] failed', err);

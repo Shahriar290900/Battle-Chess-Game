@@ -1,7 +1,7 @@
 // Live GamePresenter: drives the real board, camera rig, fx and the cinematics SequencePlayer.
 // After every sequence it calls board.syncToFen() as a safety net (architecture §4).
 import type {
-  AssetRegistry, CameraRig, EventBus, FxApi, MoveResult, PromotionRole, SequenceContext, SequencePlayer, SettingsStore, Side, Square,
+  AssetRegistry, CameraRig, EventBus, FxApi, KinematicsApi, MoveResult, PromotionRole, SequenceContext, SequencePlayer, SettingsStore, Side, Square,
 } from '../contracts';
 import type { BoardImpl } from '../render/board';
 import type { GamePresenter } from './presenter';
@@ -12,6 +12,7 @@ export interface LivePresenterDeps {
   fx: FxApi;
   registry: AssetRegistry;
   sequences: SequencePlayer;
+  kinematics?: KinematicsApi;
   bus: EventBus;
   settings: SettingsStore;
   /** Shows the promotion picker (UI). */
@@ -25,13 +26,13 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
   let checked: Square | null = null;
   let generation = 0; // bumped by reset(): a sequence that outlives its game must not sync a stale FEN
   const ctx = (move: MoveResult): SequenceContext => ({
-    move, board: d.board, camera: d.camera, fx: d.fx, registry: d.registry, bus: d.bus, settings: d.settings.get(),
+    move, board: d.board, camera: d.camera, fx: d.fx, registry: d.registry, bus: d.bus, settings: d.settings.get(), kinematics: d.kinematics,
   });
   const run = async (fn: () => Promise<void>, fen?: string) => {
     const gen = generation;
     try { await fn(); } catch (e) { console.error('[presenter] sequence failed', e); }
     if (gen !== generation) return;
-    if (fen) d.board.syncToFen(fen);
+    if (fen) { d.board.syncToFen(fen); d.fx.setStaticActors?.(d.board.allActors()); }
   };
 
   return {
@@ -40,9 +41,10 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
       generation++;
       d.sequences.skip();
       d.board.syncToFen(fen);
+      d.fx.setStaticActors?.(d.board.allActors());
       this.markCheck(null);
       },
-    syncToFen: (fen) => d.board.syncToFen(fen),
+    syncToFen: (fen) => { d.board.syncToFen(fen); d.fx.setStaticActors?.(d.board.allActors()); },
     playMove(m) {
       const c = ctx(m);
       const fn = () => (m.captured ? d.sequences.capture(c) : m.isCastle ? d.sequences.castle(c) : d.sequences.move(c));

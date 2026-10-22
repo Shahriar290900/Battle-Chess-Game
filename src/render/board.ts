@@ -6,7 +6,7 @@ import {
   Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Raycaster, Shape, Path, Sprite, SpriteMaterial, TorusGeometry, Vector3,
   type Intersection, type Scene,
 } from 'three';
-import type { BoardApi, Faction, PieceActor, Role, Square } from '../contracts';
+import type { BoardApi, Faction, KinematicsApi, PieceActor, Role, Square } from '../contracts';
 import { FILES, SIDE_FACTION, isLightSquare, squareToWorld, restYaw } from '../contracts';
 import { parsePlacement } from '../core/rules';
 import type { AssetRegistryImpl } from '../assets/registry';
@@ -24,6 +24,8 @@ export interface BoardImpl extends BoardApi {
   actorAt(sq: Square): PieceActorImpl | undefined;
   spawnActor(faction: Faction, role: Role, sq: Square): PieceActorImpl;
   setLod(lod: 0 | 1): void;
+  /** Show or hide the corner braziers (graphics: ambient). */
+  setAmbient(on: boolean): void;
   /** Per-frame update (actor mixers). dt already scaled by gsap time scale. */
   update(dt: number): void;
 }
@@ -33,6 +35,8 @@ export interface BoardOptions {
   registry: AssetRegistryImpl;
   /** Inlay/frame texture resolution (1024 on mobile). */
   textureSize?: number;
+  /** Procedural animation layer: actors are attached on spawn and detached on removal. */
+  kinematics?: KinematicsApi;
 }
 
 // Bone marble / pale cool marble on light squares; basalt / blue slate on dark squares.
@@ -156,6 +160,8 @@ export function createBoard(opts: BoardOptions): BoardImpl {
 
   // ---------- corner braziers: small bronze (Emberhold) / silver (Rime) cups with a low flame
   const flames: Array<{ s: Sprite; base: number; phase: number }> = [];
+  const brazierGroup = new Group();
+  root.add(brazierGroup);
   {
     const glowTex = makeGlowTexture(64);
     const cupBronze = new MeshStandardMaterial({ color: 0x6a4a28, roughness: 0.4, metalness: 0.85 });
@@ -181,7 +187,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
         g.add(sp);
         flames.push({ s: sp, base: size, phase: ph + mx + mz * 2 });
       }
-      root.add(g);
+      brazierGroup.add(g);
     }
   }
 
@@ -221,6 +227,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       const a = actor as PieceActorImpl;
       if (bySquare.get(a.square) === a) bySquare.delete(a.square);
       if (!actors.delete(a)) return;
+      opts.kinematics?.detach(a);
       a.dispose();
     },
 
@@ -231,6 +238,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       root.add(a.root);
       actors.add(a);
       bySquare.set(sq, a);
+      opts.kinematics?.attach(a);
       return a;
     },
 
@@ -276,11 +284,12 @@ export function createBoard(opts: BoardOptions): BoardImpl {
           root.add(spawned.root);
           actors.add(spawned);
           bySquare.set(sq, spawned);
+          opts.kinematics?.attach(spawned);
           a = spawned;
         }
         claimed.add(a);
       }
-      for (const a of spare) { actors.delete(a); a.dispose(); }
+      for (const a of spare) { actors.delete(a); opts.kinematics?.detach(a); a.dispose(); }
       // 3. snap transforms and clean up leftover pose state (safety net after skipped sequences)
       const p = new Vector3();
       for (const a of claimed) {
@@ -311,6 +320,8 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       for (const a of actors) if (a.collider === hit) return a;
       return null;
     },
+
+    setAmbient(on) { brazierGroup.visible = on; },
 
     setLod(lod) {
       registry.lod = lod;

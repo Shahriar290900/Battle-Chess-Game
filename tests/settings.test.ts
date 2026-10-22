@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../src/contracts';
-import { createSettingsStore } from '../src/core/settings';
+import { choosePreset, createSettingsStore, patchGraphics, sanitizeGraphics } from '../src/core/settings';
 
 function memStorage(initial: Record<string, string> = {}): Storage {
   const m = new Map(Object.entries(initial));
@@ -39,5 +39,28 @@ describe('settings store', () => {
     s.subscribe((_, k) => seen.push(k));
     s.set('quality', 'low'); s.set('quality', 'low');
     expect(seen).toEqual(['quality']);
+  });
+});
+
+describe('graphics settings', () => {
+  it('editing any option switches the preset to custom; choosing a preset restores it', () => {
+    const st = createSettingsStore({ storage: null });
+    choosePreset(st, 'low');
+    expect(st.get().quality).toBe('low');
+    expect(st.get().graphics).toMatchObject({ preset: 'low', shadows: 'off', fpsCap: 30 });
+    patchGraphics(st, { bloom: true });
+    expect(st.get().graphics).toMatchObject({ preset: 'custom', bloom: true, shadows: 'off' });
+    choosePreset(st, 'high');
+    expect(st.get().graphics).toMatchObject({ preset: 'high', fpsCap: 0, antialias: true });
+  });
+  it('sanitises the graphics block field by field', () => {
+    const g = sanitizeGraphics({ preset: 'ultra', resolutionScale: 7, shadows: 'low', fpsCap: 45, bloom: 'yes', showFps: true });
+    expect(g).toMatchObject({ preset: DEFAULT_SETTINGS.graphics.preset, resolutionScale: 1, shadows: 'low', showFps: true, bloom: DEFAULT_SETTINGS.graphics.bloom, fpsCap: DEFAULT_SETTINGS.graphics.fpsCap });
+  });
+  it('persists the graphics block', () => {
+    const st = memStorage();
+    const a = createSettingsStore({ storage: st });
+    patchGraphics(a, { fpsCap: 30, ambient: false });
+    expect(createSettingsStore({ storage: st }).get().graphics).toMatchObject({ preset: 'custom', fpsCap: 30, ambient: false });
   });
 });

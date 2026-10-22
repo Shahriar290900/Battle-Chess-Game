@@ -43,6 +43,7 @@ export function createGuardedPost(renderer: WebGLRenderer, scene: Scene, camera:
       inner.setQuality(t);
       probe = true;
     },
+    setGraphics(g) { inner.setGraphics?.(g); },
     bloomPulse(s, d) { inner.bloomPulse(s, d); },
   };
 }

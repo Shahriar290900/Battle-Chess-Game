@@ -113,7 +113,7 @@ try {
   const settle = (n) => waitFor((s) => s.state === 'awaitInput' && s.plies === n, `awaitInput at ply ${n}`);
 
   // ---------------------------------------------------------------- hot-seat
-  await page.click('text=Two Players');
+  await page.click('.cabinet .book:has-text("Two Players")');
   await waitFor((s) => s.state === 'awaitInput', 'hot-seat to start');
   await page.waitForTimeout(2200); // camera + settle
   await page.screenshot({ path: join(shots, 'game-1280x720.png') });
@@ -135,27 +135,27 @@ try {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.waitForTimeout(1800);
     await page.screenshot({ path: join(shots, `game-${vp.name}.png`) });
-    await page.click('.btn-menu');
+    await page.click('.k-menu');
     await page.waitForSelector('.menu-overlay:not([hidden])');
     await page.waitForTimeout(300);
     await page.screenshot({ path: join(shots, `menu-${vp.name}.png`) });
-    await page.click('text=Resume');
+    await page.click('.cabinet .book:has-text("Continue")');
     await page.waitForTimeout(300);
   }
   // Settings panel on the smallest viewport (checks scrolling card fits)
-  await page.click('.btn-settings');
-  await page.waitForSelector('.settings-card');
+  await page.click('.k-settings');
+  await page.waitForSelector('.cabinet-radio');
   await page.screenshot({ path: join(shots, 'settings-844x390.png') });
-  await page.click('text=Done');
+  await page.click('.plaque:has-text("Done")');
 
   // ---------------------------------------------------------------- vs AI
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.click('.btn-menu');
-  await page.click('text=Play vs Computer');
-  await page.click('.seg:has-text("Easy")');
+  await page.click('.k-menu');
+  await page.click('.cabinet .book:has-text("Play vs Computer")');
+  await page.click('.book.level:has-text("Easy")');
   await page.waitForTimeout(200);
   await page.screenshot({ path: join(shots, 'menu-vs-ai-1280x720.png') });
-  await page.click('text=Begin');
+  await page.click('.plaque:has-text("Begin")');
   await waitFor((s) => s.state === 'awaitInput' && s.plies === 0, 'vs-AI game to start');
   await page.waitForTimeout(2000);
   await play('e2', 'e4');
@@ -164,22 +164,34 @@ try {
   await page.waitForTimeout(1600);
   await page.screenshot({ path: join(shots, 'vs-ai-1280x720.png') });
 
-  // ---------------------------------------------------------------- one medium-quality look (menu + in-game)
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(url.replace('quality=low', 'quality=medium'), { waitUntil: 'load', timeout: 120000 });
-  await page.waitForSelector('.gate-btn:not([hidden])', { timeout: 180000 });
-  await page.click('.gate-btn');
-  await page.waitForSelector('.menu-overlay:not([hidden])', { timeout: 30000 });
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: join(shots, 'medium-menu-1280x720.png') });
-  await page.click('text=Two Players');
-  await waitFor((s) => s.state === 'awaitInput', 'medium game to start');
-  await page.waitForTimeout(2500);
-  await page.screenshot({ path: join(shots, 'medium-game-1280x720.png') });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: join(shots, 'medium-game-390x844.png') });
-  log('medium tier =', await page.evaluate(() => window.__bc.quality.tier));
+  // ---------------------------------------------------------------- medium-quality looks (loading, menu, in-game, settings, game over)
+  for (const vp of [{ name: '1280x720', width: 1280, height: 720 }, { name: '390x844', width: 390, height: 844 }]) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(url.replace('quality=low', 'quality=medium'), { waitUntil: 'load', timeout: 120000 });
+    await page.waitForSelector('.gate-btn:not([hidden])', { timeout: 180000 });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: join(shots, `medium-loading-${vp.name}.png`) });
+    await page.click('.gate-btn');
+    await page.waitForSelector('.menu-overlay:not([hidden])', { timeout: 30000 });
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: join(shots, `medium-menu-${vp.name}.png`) });
+    await page.click('.cabinet .book:has-text("Two Players")');
+    await waitFor((s) => s.state === 'awaitInput', 'medium game to start');
+    await page.waitForTimeout(2500);
+    await play('e2', 'e4');
+    await waitCameraStable();
+    await page.screenshot({ path: join(shots, `medium-game-${vp.name}.png`) });
+    await page.click('.k-settings');
+    await page.waitForSelector('.cabinet-radio');
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: join(shots, `medium-settings-${vp.name}.png`) });
+    await page.click('.plaque:has-text("Done")');
+    await page.evaluate(() => window.__bc.controller.resign());
+    await page.waitForSelector('.parchment', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: join(shots, `medium-gameover-${vp.name}.png`) });
+    log('medium', vp.name, 'tier =', await page.evaluate(() => window.__bc.quality.tier));
+  }
 
   if (errors.length) throw new Error(`console errors:\n  ${[...new Set(errors)].join('\n  ')}`);
   log('PASS: no console errors; screenshots in', shots);

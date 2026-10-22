@@ -15,6 +15,8 @@ export interface UiDeps {
   loading: LoadingScreen;
   promotion: PromotionPicker;
   onStart(config: GameModeConfig): void;
+  /** Learn area (src/learn), when present. */
+  learn?: { open(kind: 'tutorial' | 'howto' | 'library'): void };
 }
 
 export interface Ui {
@@ -43,6 +45,8 @@ export function createUi(d: UiDeps): Ui {
     onResume: () => { /* the menu closes itself; the game kept running underneath */ },
     onSettings: () => settingsPanel.open(),
     onResign: () => { void controller.resign(); },
+    onLearn: (k) => { menu.close(); d.learn?.open(k); },
+    learnAvailable: () => !!d.learn,
   });
   const gameOver: GameOverPanel = createGameOverPanel({
     onRematch: () => { const m = controller.gameMode; if (m) d.onStart({ ...m }); },

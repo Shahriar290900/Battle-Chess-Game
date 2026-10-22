@@ -12,7 +12,7 @@ export interface AssetRegistryImpl extends AssetRegistry {
   lod: 0 | 1;
   createActor(faction: Faction, role: Role, square: Square): PieceActorImpl;
   /** Fetch all fragment sets in the background so the first capture does not hitch. */
-  warmFragments(): Promise<void>;
+  warmFragments(onProgress?: (done: number, total: number) => void): Promise<void>;
   readonly ready: boolean;
 }
 
@@ -115,14 +115,14 @@ export function createAssetRegistry(): AssetRegistryImpl {
       pool.push(obj);
     },
 
-    async warmFragments() {
+    async warmFragments(onProgress) {
+      let n = 0;
       for (const id of ALL_ASSET_IDS) {
-        if (fragTemplates.has(id)) continue;
-        const p = loadFragTemplate(id);
-        fragTemplates.set(id, p);
-        p.catch(() => fragTemplates.delete(id));
+        let p = fragTemplates.get(id);
+        if (!p) { p = loadFragTemplate(id); fragTemplates.set(id, p); p.catch(() => fragTemplates.delete(id)); }
         try { await p; } catch { /* retried lazily on first capture */ }
-        await new Promise((r) => setTimeout(r, 60));
+        onProgress?.(++n, ALL_ASSET_IDS.length);
+        if (!onProgress) await new Promise((r) => setTimeout(r, 60)); // background warm-up: stay out of the way
       }
     },
   };

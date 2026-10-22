@@ -1,7 +1,7 @@
 // SettingsStore persisted to localStorage. Every storage access is wrapped in try/catch
 // (private windows, blocked storage, node tests) and the store works purely in memory when it fails.
-import type { EventBus, Settings, SettingsStore } from '../contracts';
-import { DEFAULT_SETTINGS } from '../contracts';
+import type { EventBus, GraphicsSettings, QualityTier, Settings, SettingsStore } from '../contracts';
+import { DEFAULT_SETTINGS, GRAPHICS_PRESETS } from '../contracts';
 
 export const SETTINGS_KEY = 'battle-chess.settings.v1';
 
@@ -16,8 +16,46 @@ const RANGES: Partial<Record<keyof Settings, [number, number]>> = {
   animSpeed: [0.5, 2], musicVolume: [0, 1], sfxVolume: [0, 1],
 };
 
+const G_ENUMS = {
+  preset: ['low', 'medium', 'high', 'custom'], shadows: ['off', 'low', 'high'], particles: ['low', 'medium', 'high'], physics: ['simple', 'full'],
+} as const;
+
+/** Field-by-field validation of the graphics block; invalid or missing fields fall back to the default preset. */
+export function sanitizeGraphics(value: unknown): GraphicsSettings {
+  const def = DEFAULT_SETTINGS.graphics;
+  const v = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  const pick = <T extends string>(k: keyof typeof G_ENUMS, fallback: T): T => ((G_ENUMS[k] as readonly string[]).includes(v[k] as string) ? v[k] : fallback) as T;
+  const bool = (k: keyof GraphicsSettings, fallback: boolean) => (typeof v[k] === 'boolean' ? (v[k] as boolean) : fallback);
+  const scale = typeof v.resolutionScale === 'number' && Number.isFinite(v.resolutionScale) ? Math.min(1, Math.max(0.5, v.resolutionScale)) : def.resolutionScale;
+  return {
+    preset: pick('preset', def.preset), resolutionScale: scale, shadows: pick('shadows', def.shadows),
+    bloom: bool('bloom', def.bloom), antialias: bool('antialias', def.antialias), particles: pick('particles', def.particles),
+    physics: pick('physics', def.physics), ambient: bool('ambient', def.ambient), secondaryMotion: bool('secondaryMotion', def.secondaryMotion),
+    showFps: bool('showFps', def.showFps),
+    fpsCap: ([0, 30, 60] as const).includes(v.fpsCap as 0) ? (v.fpsCap as 0 | 30 | 60) : def.fpsCap,
+  };
+}
+
+/** Preset values for a tier, keeping the user's FPS-overlay choice. */
+export function graphicsForTier(tier: QualityTier, keep?: Pick<GraphicsSettings, 'showFps'>): GraphicsSettings {
+  return { ...GRAPHICS_PRESETS[tier], showFps: keep?.showFps ?? GRAPHICS_PRESETS[tier].showFps };
+}
+
+/** Edit one graphics option: the preset becomes 'custom'. */
+export function patchGraphics(store: SettingsStore, patch: Partial<GraphicsSettings>): void {
+  store.set('graphics', { ...store.get().graphics, ...patch, preset: patch.preset ?? 'custom' });
+}
+
+/** Choose a preset ('auto' resolves to the device tier elsewhere). */
+export function choosePreset(store: SettingsStore, preset: QualityTier | 'auto'): void {
+  if (preset === 'auto') { store.set('quality', 'auto'); return; }
+  store.set('quality', preset);
+  store.set('graphics', graphicsForTier(preset, store.get().graphics));
+}
+
 /** Validate one value against the schema; returns the default when invalid. */
 function sanitize<K extends keyof Settings>(key: K, value: unknown): Settings[K] {
+  if (key === 'graphics') return sanitizeGraphics(value) as Settings[K];
   const def = DEFAULT_SETTINGS[key];
   if (typeof def === 'boolean') return (typeof value === 'boolean' ? value : def) as Settings[K];
   if (typeof def === 'number') {
@@ -65,7 +103,7 @@ export function createSettingsStore(opts: SettingsStoreOptions = {}): SettingsSt
     get: () => snapshot,
     set(k, value) {
       const next = sanitize(k, value);
-      if (current[k] === next) return;
+      if (k === 'graphics' ? JSON.stringify(current[k]) === JSON.stringify(next) : current[k] === next) return;
       current = { ...current, [k]: next };
       snapshot = Object.freeze({ ...current });
       persist();

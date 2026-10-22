@@ -1,5 +1,6 @@
 // Quality tiers (DECISIONS #9). Auto tier = 2 s GPU benchmark on desktop, Low on mobile/APK; the Settings
 // override wins. Applying a tier fans out to the renderer, shadows, piece LOD, fx and post-processing.
+import { graphicsForTier } from '../core/settings';
 import type { FxApi, PlatformApi, PostPipeline, QualityTier, SettingsStore } from '../contracts';
 import type { BoardImpl } from './board';
 import type { Lighting } from './lighting';
@@ -24,6 +25,8 @@ export interface QualityDeps {
   settings: SettingsStore;
   /** Render one frame through the full pipeline (used by the benchmark). */
   renderFrame: (dt: number) => void;
+  /** Re-apply the detailed graphics options after a tier change. */
+  applyGraphics?: () => void;
 }
 
 export function createQuality(d: QualityDeps): QualityManager {
@@ -39,6 +42,10 @@ export function createQuality(d: QualityDeps): QualityManager {
     d.fx.setQuality(t);
     d.post.setQuality(t);
     d.post.setSize(d.kit.width, d.kit.height);
+    // Presets follow the tier unless the user customised the options.
+    const cur = d.settings.get().graphics;
+    if (cur.preset !== 'custom') d.settings.set('graphics', graphicsForTier(t, cur));
+    d.applyGraphics?.();
   };
 
   const benchmark = (): Promise<QualityTier> => new Promise((resolve) => {

@@ -12,6 +12,8 @@ export interface RenderKit {
   readonly height: number;
   setSize(width: number, height: number): void;
   setPixelRatioCap(cap: number): void;
+  /** Render scale 0.5–1 applied on top of the capped device pixel ratio. */
+  setResolutionScale(scale: number): void;
 }
 
 export function createRenderKit(canvas: HTMLCanvasElement): RenderKit {
@@ -25,11 +27,12 @@ export function createRenderKit(canvas: HTMLCanvasElement): RenderKit {
 
   const scene = new Scene();
   let cap = PIXEL_RATIO_CAP.medium;
+  let scale = 1;
   let w = canvas.clientWidth || window.innerWidth;
   let h = canvas.clientHeight || window.innerHeight;
 
   const apply = () => {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap) * scale);
     renderer.setSize(w, h, false);
   };
   apply();
@@ -40,6 +43,7 @@ export function createRenderKit(canvas: HTMLCanvasElement): RenderKit {
     get height() { return h; },
     setSize(width, height) { w = Math.max(1, width); h = Math.max(1, height); apply(); },
     setPixelRatioCap(c) { cap = c; apply(); },
+    setResolutionScale(v) { const n = Math.min(1, Math.max(0.5, v)); if (n !== scale) { scale = n; apply(); } },
   };
 }
 
