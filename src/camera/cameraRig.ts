@@ -13,6 +13,8 @@ import { squareToWorld } from '../contracts';
 
 export interface CameraRigImpl extends CameraRig {
   readonly seat: Side;
+  /** Animation-speed multiplier for the turn swing (settings.animSpeed). */
+  setSpeed(speed: number): void;
   /** Suspend OrbitControls while a piece is being dragged. */
   setInputLocked(locked: boolean): void;
   /** Project a point of the board plane into CSS pixels (tests / debugging). */
@@ -54,6 +56,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
   let restoreTween: gsap.core.Tween | null = null;
   let restoreResolve: (() => void) | null = null;
   let locked = false;
+  let speed = 1;
   let time = 0;
   let trauma = 0;
   const offset = new Vector3();
@@ -140,6 +143,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
         },
       });
       swing = tl;
+      tl.timeScale(speed);
       tl.to(proxy, { azimuth: target, polar, duration, ease: 'power2.inOut' }, 0);
       if (pushOut) {
         tl.to(proxy, { radius: radius + 1.0, duration: duration * 0.5, ease: 'sine.out' }, 0);
@@ -277,6 +281,8 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
         if (rig.mode !== 'free') { proxy.polar = modePolar(); proxy.radius = modeRadius(); }
       }
     },
+
+    setSpeed(v) { speed = Math.min(Math.max(v, 0.25), 4); swing?.timeScale(speed); },
 
     setInputLocked(l) {
       locked = l;

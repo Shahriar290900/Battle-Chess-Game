@@ -114,10 +114,11 @@ async function boot(): Promise<void> {
     createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
 
     // ---- settings fan-out
-    gsap.globalTimeline.timeScale(settings.get().animSpeed);
+    // Cinematics owns gsap.globalTimeline.timeScale (hit-stop/slow-mo); animSpeed only drives our own tweens.
+    rig.setSpeed(settings.get().animSpeed);
     settings.subscribe((s, key) => {
       if (key === 'cameraMode') rig.setMode(s.cameraMode);
-      else if (key === 'animSpeed') gsap.globalTimeline.timeScale(s.animSpeed);
+      else if (key === 'animSpeed') rig.setSpeed(s.animSpeed);
       else if (key === 'musicEnabled' || key === 'musicVolume' || key === 'sfxVolume') syncAudio();
     });
 

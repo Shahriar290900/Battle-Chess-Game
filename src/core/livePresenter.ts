@@ -1,6 +1,5 @@
 // Live GamePresenter: drives the real board, camera rig, fx and the cinematics SequencePlayer.
 // After every sequence it calls board.syncToFen() as a safety net (architecture §4).
-import { gsap } from 'gsap';
 import type {
   AssetRegistry, CameraRig, EventBus, FxApi, MoveResult, PromotionRole, SequenceContext, SequencePlayer, SettingsStore, Side, Square,
 } from '../contracts';
@@ -28,13 +27,10 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
   const ctx = (move: MoveResult): SequenceContext => ({
     move, board: d.board, camera: d.camera, fx: d.fx, registry: d.registry, bus: d.bus, settings: d.settings.get(),
   });
-  /** Sequences may leave the global time scale slowed or reset; the animation-speed setting is re-applied after each. */
-  const restoreSpeed = () => { gsap.globalTimeline.timeScale(d.settings.get().animSpeed); };
   const run = async (fn: () => Promise<void>, fen?: string) => {
     const gen = generation;
     try { await fn(); } catch (e) { console.error('[presenter] sequence failed', e); }
     if (gen !== generation) return;
-    restoreSpeed();
     if (fen) d.board.syncToFen(fen);
   };
 
@@ -45,8 +41,7 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
       d.sequences.skip();
       d.board.syncToFen(fen);
       this.markCheck(null);
-      restoreSpeed();
-    },
+      },
     syncToFen: (fen) => d.board.syncToFen(fen),
     playMove(m) {
       const c = ctx(m);
