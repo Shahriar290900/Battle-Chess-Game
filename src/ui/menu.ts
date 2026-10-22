@@ -2,7 +2,7 @@
 import type { AiLevel, GameModeConfig, SettingsStore, Side } from '../contracts';
 import { FACTION_NAME } from '../contracts';
 import type { GameController } from '../core/game';
-import { ICON, clear, h, svg } from './dom';
+import { clear, h } from './dom';
 import { LEVEL_LABEL } from './glyphs';
 
 export interface MenuHandlers {
@@ -45,36 +45,34 @@ export function createMenu(controller: GameController, settings: SettingsStore, 
 
   const title = h('div', { class: 'title-block' },
     h('h1', { class: 'title', text: 'Battle Chess' }),
-    h('p', { class: 'subtitle' }, h('span', { class: 'ember', text: 'Emberhold' }), ' versus the ', h('span', { class: 'ice', text: 'Rime Host' })));
+    h('p', { class: 'subtitle', text: 'Emberhold versus the Rime Host' }));
   card.append(title, root, aiView);
 
   const big = (label: string, cls: string, onClick: () => void, sub?: string) =>
-    h('button', { class: `btn btn-big ${cls}`, type: 'button', onClick }, h('span', { class: 'btn-label', text: label }), sub ? h('span', { class: 'btn-sub', text: sub }) : null);
+    h('button', { class: `btn row-btn ${cls}`, type: 'button', onClick }, h('span', { class: 'btn-label', text: label }), sub ? h('span', { class: 'btn-sub', text: sub }) : null);
 
   function renderRoot() {
     clear(root);
     const s = controller.snapshot();
     const running = !!s.mode && s.state !== 'menu' && s.state !== 'boot' && s.state !== 'loading';
     const live = running && !s.result;
-    if (running) root.append(big(s.result ? 'View Board' : 'Resume Battle', 'btn-primary', () => { api.close(); hd.onResume(); }));
+    if (running) root.append(big(s.result ? 'View Board' : 'Resume', 'btn-primary', () => { api.close(); hd.onResume(); }));
     root.append(
-      big('Play vs Computer', running ? '' : 'btn-primary', () => show('ai'), 'Choose your host and difficulty'),
-      big('Two Players', '', () => { api.close(); hd.onStart({ kind: 'hotseat', playerSide: 'w', aiLevel: settings.get().aiLevel }); }, 'Pass and play on one device'),
+      big('Play vs Computer', running ? '' : 'btn-primary', () => show('ai')),
+      big('Two Players', '', () => { api.close(); hd.onStart({ kind: 'hotseat', playerSide: 'w', aiLevel: settings.get().aiLevel }); }, 'Pass and play'),
     );
-    const row = h('div', { class: 'btn-row' });
-    row.append(
-      h('button', { class: 'btn', type: 'button', onClick: () => { hd.onSettings(); } }, svg(ICON.gear), h('span', { class: 'btn-label', text: 'Settings' })),
+    root.append(
+      h('button', { class: 'btn row-btn', type: 'button', onClick: () => { hd.onSettings(); } }, h('span', { class: 'btn-label', text: 'Settings' })),
       musicButton(),
     );
-    root.append(row);
-    if (live) root.append(h('button', { class: 'btn btn-danger', type: 'button', onClick: () => { api.close(); hd.onResign(); } }, svg(ICON.flag), h('span', { class: 'btn-label', text: 'Resign' })));
+    if (live) root.append(h('button', { class: 'btn row-btn btn-danger', type: 'button', onClick: () => { api.close(); hd.onResign(); } }, h('span', { class: 'btn-label', text: 'Resign' })));
   }
 
   function musicButton() {
     const on = settings.get().musicEnabled;
-    const b = h('button', { class: 'btn', type: 'button', 'aria-pressed': String(on),
+    const b = h('button', { class: 'btn row-btn', type: 'button', 'aria-pressed': String(on),
       onClick: () => { settings.set('musicEnabled', !settings.get().musicEnabled); renderRoot(); } },
-      svg(on ? ICON.note : ICON.noteOff), h('span', { class: 'btn-label', text: `Music ${on ? 'On' : 'Off'}` }));
+      h('span', { class: 'btn-label', text: 'Music' }), h('span', { class: 'btn-sub', text: on ? 'On' : 'Off' }));
     return b;
   }
 
@@ -84,20 +82,20 @@ export function createMenu(controller: GameController, settings: SettingsStore, 
     let side: Side = st.playerSide;
     let level: AiLevel = st.aiLevel;
     const sideSeg = segmented<Side>('Your host', [
-      { value: 'w', label: FACTION_NAME.emberhold, sub: 'White · moves first' },
+      { value: 'w', label: FACTION_NAME.emberhold, sub: 'White' },
       { value: 'b', label: FACTION_NAME.rime, sub: 'Black' },
     ], side, (v) => { side = v; });
     const levelSeg = segmented<AiLevel>('Difficulty', (Object.keys(LEVEL_LABEL) as AiLevel[]).map((l) => ({ value: l, label: LEVEL_LABEL[l] })), level, (v) => { level = v; });
     aiView.append(
-      h('h2', { class: 'section', text: 'Command which host?' }), sideSeg.el,
-      h('h2', { class: 'section', text: 'Opponent strength' }), levelSeg.el,
-      big('Begin Battle', 'btn-primary', () => {
+      h('h2', { class: 'section', text: 'Your host' }), sideSeg.el,
+      h('h2', { class: 'section', text: 'Difficulty' }), levelSeg.el,
+      big('Begin', 'btn-primary', () => {
         settings.set('playerSide', side);
         settings.set('aiLevel', level);
         api.close();
         hd.onStart({ kind: 'vs-ai', playerSide: side, aiLevel: level });
       }),
-      h('button', { class: 'btn', type: 'button', onClick: () => show('root') }, h('span', { class: 'btn-label', text: 'Back' })),
+      h('button', { class: 'btn row-btn', type: 'button', onClick: () => show('root') }, h('span', { class: 'btn-label', text: 'Back' })),
     );
   }
 

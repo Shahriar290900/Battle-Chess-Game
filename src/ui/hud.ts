@@ -1,5 +1,5 @@
-// In-game HUD: turn banner (faction name, check, "thinking…"), captured trays, collapsible move list
-// and the Menu / Undo / Settings / Skip buttons. Pure DOM, driven by GameSnapshot updates.
+// In-game HUD: a compact turn indicator, captured-piece glyphs, icon-only buttons (with tooltips) and a
+// move-list drawer that stays closed until asked for. Pure DOM, driven by GameSnapshot updates.
 import type { Role, Side, SettingsStore } from '../contracts';
 import { SIDE_FACTION } from '../contracts';
 import type { GameController, GameSnapshot } from '../core/game';
@@ -20,62 +20,61 @@ export interface Hud {
 }
 
 const byValue = (a: Role, b: Role) => ROLE_VALUE[b] - ROLE_VALUE[a];
+const adv = (roles: Role[]) => roles.reduce((n, r) => n + ROLE_VALUE[r], 0);
 
 export function createHud(controller: GameController, settings: SettingsStore, handlers: HudHandlers): Hud {
-  // ---- banner
-  const bannerName = h('span', { class: 'banner-name' });
-  const bannerSub = h('span', { class: 'banner-sub' });
-  const checkChip = h('span', { class: 'chip chip-check', text: 'Check', hidden: true });
+  // ---- turn indicator
+  const dot = h('span', { class: 'turn-dot' });
+  const name = h('span', { class: 'turn-name' });
+  const sub = h('span', { class: 'turn-sub' });
+  const check = h('span', { class: 'turn-check', text: 'Check', hidden: true });
   const spinner = h('span', { class: 'spinner', hidden: true, 'aria-hidden': 'true' });
-  const swatch = h('span', { class: 'banner-swatch' });
-  const banner = h('div', { class: 'turn-banner', role: 'status', 'aria-live': 'polite' },
-    swatch, h('div', { class: 'banner-text' }, bannerName, bannerSub), spinner, checkChip);
+  const turn = h('div', { class: 'turn', role: 'status', 'aria-live': 'polite' }, dot, name, sub, check, spinner);
 
-  // ---- trays
+  // ---- captured glyphs (no labels: row 1 = taken by Emberhold, row 2 = taken by the Rime Host)
   const trayRow = (side: Side) => {
     const icons = h('span', { class: 'tray-icons' });
-    const adv = h('span', { class: 'tray-adv' });
-    const el = h('div', { class: `tray tray-${side}`, 'aria-label': `Pieces taken by ${sideName(side)}` },
-      h('span', { class: 'tray-label', text: sideName(side) }), icons, adv);
-    return { el, icons, adv };
+    const plus = h('span', { class: 'tray-adv' });
+    return { el: h('div', { class: `tray tray-${side}`, title: `Taken by ${sideName(side)}`, 'aria-label': `Pieces taken by ${sideName(side)}` }, icons, plus), icons, plus };
   };
   const trayW = trayRow('w'), trayB = trayRow('b');
   const trays = h('div', { class: 'trays' }, trayW.el, trayB.el);
 
-  // ---- move list
+  // ---- buttons (icon only)
+  const btn = (icon: string, label: string, cls: string, onClick: () => void) =>
+    h('button', { class: `icon-btn ${cls}`, type: 'button', title: label, 'aria-label': label, onClick }, svg(icon));
+  const undoBtn = btn(ICON.undo, 'Undo', 'btn-undo', handlers.onUndo);
+  const skipBtn = btn(ICON.skip, 'Skip animation', 'btn-skip', handlers.onSkip);
+  skipBtn.hidden = true;
+  const movesBtn = btn(ICON.list, 'Move list', 'btn-moves', () => toggleMoves());
+  movesBtn.setAttribute('aria-expanded', 'false');
+  const buttons = h('div', { class: 'hud-buttons' }, skipBtn, undoBtn, movesBtn,
+    btn(ICON.gear, 'Settings', 'btn-settings', handlers.onSettings),
+    btn(ICON.menu, 'Menu', 'btn-menu', handlers.onMenu));
+
+  // ---- move-list drawer (closed by default)
   const movesBody = h('ol', { class: 'moves-body' });
-  const movesTitle = h('span', { class: 'moves-title', text: 'Moves' });
-  const movesLast = h('span', { class: 'moves-last' });
-  const movesToggle = h('button', { class: 'moves-toggle', type: 'button', 'aria-expanded': 'false', onClick: () => toggleMoves() }, movesTitle, movesLast, svg(ICON.chevron, 'ic chev'));
-  const movesEl = h('div', { class: 'movelist collapsed' }, movesToggle, movesBody);
-  function toggleMoves() {
-    const c = movesEl.classList.toggle('collapsed');
-    movesToggle.setAttribute('aria-expanded', String(!c));
+  const movesHead = h('div', { class: 'moves-head' }, h('span', { class: 'moves-title', text: 'Moves' }),
+    h('button', { class: 'icon-btn small', type: 'button', title: 'Close', 'aria-label': 'Close move list', onClick: () => toggleMoves(false) }, svg(ICON.close)));
+  const drawer = h('div', { class: 'moves', hidden: true }, movesHead, movesBody);
+  function toggleMoves(open?: boolean) {
+    const want = open ?? drawer.hidden;
+    drawer.hidden = !want;
+    movesBtn.setAttribute('aria-expanded', String(want));
   }
 
-  // ---- buttons
-  const btn = (icon: string, label: string, cls: string, onClick: () => void) =>
-    h('button', { class: `hud-btn ${cls}`, type: 'button', 'aria-label': label, onClick }, svg(icon), h('span', { class: 'hud-btn-label', text: label }));
-  const undoBtn = btn(ICON.undo, 'Undo', 'btn-undo', handlers.onUndo);
-  const skipBtn = btn(ICON.skip, 'Skip', 'btn-skip', handlers.onSkip);
-  skipBtn.hidden = true;
-  const buttons = h('div', { class: 'hud-buttons' },
-    btn(ICON.menu, 'Menu', 'btn-menu', handlers.onMenu), undoBtn,
-    btn(ICON.gear, 'Settings', 'btn-settings', handlers.onSettings), skipBtn);
-
-  const hint = h('div', { class: 'skip-hint', text: 'Tap anywhere to skip', hidden: true });
-
-  const left = h('div', { class: 'hud-left hud-side' }, banner, trays);
-  const right = h('div', { class: 'hud-right hud-side' }, buttons, movesEl);
-  const el = h('div', { class: 'hud', hidden: true }, left, right, hint);
+  const hint = h('div', { class: 'skip-hint', text: 'Tap to skip', hidden: true });
+  const left = h('div', { class: 'hud-left' }, turn, trays);
+  const el = h('div', { class: 'hud', hidden: true }, left, buttons, drawer, hint);
 
   let lastKey = '';
   let movesCount = -1;
 
-  function renderTray(row: ReturnType<typeof trayRow>, roles: Role[], faction: 'emberhold' | 'rime', adv: number) {
+  function renderTray(row: ReturnType<typeof trayRow>, roles: Role[], faction: 'emberhold' | 'rime', lead: number) {
     clear(row.icons);
     for (const r of [...roles].sort(byValue)) row.icons.append(pieceIcon(r, faction));
-    row.adv.textContent = adv > 0 ? `+${adv}` : '';
+    row.plus.textContent = lead > 0 ? `+${lead}` : '';
+    row.el.classList.toggle('empty', roles.length === 0);
   }
 
   function renderMoves(s: GameSnapshot) {
@@ -85,63 +84,60 @@ export function createHud(controller: GameController, settings: SettingsStore, h
     for (let i = 0; i < s.moves.length; i += 2) {
       const w = s.moves[i], b = s.moves[i + 1];
       movesBody.append(h('li', { class: 'move-row' },
-        h('span', { class: 'move-no', text: `${i / 2 + 1}.` }),
+        h('span', { class: 'move-no', text: `${i / 2 + 1}` }),
         h('span', { class: 'move-w', text: w.san }),
         h('span', { class: 'move-b', text: b ? b.san : '' })));
     }
     movesBody.scrollTop = movesBody.scrollHeight;
-    const last = s.moves[s.moves.length - 1];
-    movesLast.textContent = last ? `${Math.ceil(s.moves.length / 2)}${last.side === 'w' ? '.' : '...'} ${last.san}` : '';
-    movesTitle.textContent = `Moves (${s.moves.length})`;
   }
 
   function update(s: GameSnapshot) {
     const inGame = !!s.mode && s.state !== 'boot' && s.state !== 'loading' && s.state !== 'menu';
     el.hidden = !inGame;
     if (!inGame) return;
-    const key = `${s.state}|${s.turn}|${s.check}|${s.result?.reason}|${s.moves.length}|${s.canUndo}`;
     renderMoves(s);
+    const key = `${s.state}|${s.turn}|${s.check}|${s.result?.reason}|${s.moves.length}|${s.canUndo}`;
     if (key === lastKey) return;
     lastKey = key;
 
-    const faction = SIDE_FACTION[s.turn];
     const vsAi = s.mode?.kind === 'vs-ai';
-    el.dataset.turn = s.turn;
-    banner.dataset.faction = faction;
-    swatch.dataset.faction = faction;
-    spinner.hidden = !s.thinking;
-    checkChip.hidden = !s.check || !!s.result;
     const last = s.moves[s.moves.length - 1];
+    let faction: string = SIDE_FACTION[s.turn];
     if (s.result) {
       const head = resultHeadline(s.result.result, s.mode);
-      banner.dataset.faction = s.result.result === '1/2-1/2' ? 'neutral' : s.result.result === '1-0' ? 'emberhold' : 'rime';
-      swatch.dataset.faction = banner.dataset.faction;
-      bannerName.textContent = head.title;
-      bannerSub.textContent = REASON_LABEL[s.result.reason];
+      faction = s.result.result === '1/2-1/2' ? 'neutral' : s.result.result === '1-0' ? 'emberhold' : 'rime';
+      name.textContent = head.title;
+      sub.textContent = REASON_LABEL[s.result.reason];
     } else if (s.busy && last) {
-      banner.dataset.faction = SIDE_FACTION[last.side];
-      swatch.dataset.faction = SIDE_FACTION[last.side];
-      bannerName.textContent = sideName(last.side);
-      bannerSub.textContent = last.captured ? 'strikes!' : last.isCastle ? 'castles' : last.promotion ? 'ascends' : 'advances';
+      faction = SIDE_FACTION[last.side];
+      name.textContent = sideName(last.side);
+      sub.textContent = last.san;
     } else if (s.thinking) {
-      bannerName.textContent = sideName(s.turn);
-      bannerSub.textContent = 'is thinking…';
+      name.textContent = sideName(s.turn);
+      sub.textContent = 'thinking…';
     } else {
-      bannerName.textContent = sideName(s.turn);
-      bannerSub.textContent = vsAi ? 'Your move' : 'to move';
+      name.textContent = sideName(s.turn);
+      sub.textContent = vsAi ? 'your move' : 'to move';
     }
+    dot.dataset.faction = faction;
+    spinner.hidden = !s.thinking;
+    check.hidden = !s.check || !!s.result;
 
     renderTray(trayW, s.captured.w, 'rime', Math.max(0, adv(s.captured.w) - adv(s.captured.b)));
     renderTray(trayB, s.captured.b, 'emberhold', Math.max(0, adv(s.captured.b) - adv(s.captured.w)));
+    trays.classList.toggle('empty', s.captured.w.length + s.captured.b.length === 0);
 
     undoBtn.disabled = !s.canUndo;
     skipBtn.hidden = !s.busy;
     hint.hidden = !s.busy;
     el.classList.toggle('busy', s.busy);
   }
-  const adv = (roles: Role[]) => roles.reduce((n, r) => n + ROLE_VALUE[r], 0);
 
-  const applySettings = () => { el.classList.toggle('no-moves', !settings.get().showMoveList); };
+  const applySettings = () => {
+    const on = settings.get().showMoveList;
+    movesBtn.hidden = !on;
+    if (!on) toggleMoves(false);
+  };
   settings.subscribe((_, k) => { if (k === 'showMoveList') applySettings(); });
   applySettings();
   controller.subscribe(update);

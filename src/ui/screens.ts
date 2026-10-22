@@ -12,12 +12,12 @@ export interface LoadingScreen {
 
 export function createLoadingScreen(): LoadingScreen {
   const bar = h('div', { class: 'load-bar-fill' });
-  const label = h('p', { class: 'load-label', text: 'Stoking the forges…' });
-  const gate = h('button', { class: 'btn btn-primary btn-big gate-btn', type: 'button', hidden: true }, h('span', { class: 'btn-label', text: 'Tap to begin' }));
+  const label = h('p', { class: 'load-label', text: 'Loading…' });
+  const gate = h('button', { class: 'btn btn-primary gate-btn', type: 'button', hidden: true }, h('span', { class: 'btn-label', text: 'Tap to begin' }));
   const el = h('div', { class: 'loading' },
     h('div', { class: 'loading-inner' },
       h('h1', { class: 'title', text: 'Battle Chess' }),
-      h('p', { class: 'subtitle' }, h('span', { class: 'ember', text: 'Emberhold' }), ' versus the ', h('span', { class: 'ice', text: 'Rime Host' })),
+      h('p', { class: 'subtitle', text: 'Emberhold versus the Rime Host' }),
       h('div', { class: 'load-bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, bar),
       label, gate));
   return {

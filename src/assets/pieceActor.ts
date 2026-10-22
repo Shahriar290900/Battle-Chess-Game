@@ -41,6 +41,9 @@ interface MatState {
   mat: Material & { color?: Color; emissive?: Color };
   color: Color | null;
   emissive: Color | null;
+  transparent: boolean;
+  opacity: number;
+  depthWrite: boolean;
 }
 
 const HIGHLIGHT = new Color(0xffc060);
@@ -93,7 +96,7 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
       c = m.clone();
       matMap.set(m, c);
       const mm = c as MatState['mat'];
-      matStates.push({ mat: mm, color: mm.color ? mm.color.clone() : null, emissive: mm.emissive ? mm.emissive.clone() : null });
+      matStates.push({ mat: mm, color: mm.color ? mm.color.clone() : null, emissive: mm.emissive ? mm.emissive.clone() : null, transparent: mm.transparent, opacity: mm.opacity, depthWrite: mm.depthWrite });
     }
     return c;
   };
@@ -149,6 +152,7 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
   let scrubbing: ClipName | null = null;
   let dim = 0;
   let highlight = false;
+  let fade = 1;
   let disposed = false;
 
   const squareObj = { value: opts.square };
@@ -268,6 +272,21 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     setDim(amount) { dim = Math.min(Math.max(amount, 0), 1); applyMaterials(); },
     setHighlight(on) { highlight = on; applyMaterials(); },
 
+    setFade(alpha) {
+      const a = Math.min(Math.max(alpha, 0), 1);
+      if (a === fade) return;
+      const wasShadow = fade >= 0.6;
+      fade = a;
+      model.visible = a > 0.001;
+      if (a >= 1) {
+        for (const s of matStates) { s.mat.transparent = s.transparent; s.mat.opacity = s.opacity; s.mat.depthWrite = s.depthWrite; }
+      } else {
+        for (const s of matStates) { s.mat.transparent = true; s.mat.opacity = s.opacity * a; s.mat.depthWrite = a >= 0.5 ? s.depthWrite : false; }
+      }
+      const shadow = a >= 0.6;
+      if (shadow !== wasShadow) for (const m of meshesAll) m.castShadow = shadow;
+    },
+
     setWeaponSummon(scale) {
       if (!summonNode) return;
       summonNode.scale.setScalar(Math.max(scale, 0));
@@ -281,7 +300,7 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     resetPose() {
       model.position.set(0, 0, 0);
       model.rotation.set(0, 0, 0);
-      dim = 0; highlight = false; applyMaterials();
+      dim = 0; highlight = false; applyMaterials(); actor.setFade(1);
       actor.setWeaponSummon(0);
       if (mode === 'scrub' || !actions.get('Idle')?.isRunning()) {
         if (actions.has('Idle')) actor.play('Idle', { fade: 0.15 });

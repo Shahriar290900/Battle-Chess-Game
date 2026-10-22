@@ -112,7 +112,7 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer): Lighting 
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2 + 0.26;
     const col = new Mesh(colGeo, stone);
-    col.position.set(Math.sin(a) * 21, 15.5, Math.cos(a) * 21);
+    col.position.set(Math.sin(a) * 25, 15.5, Math.cos(a) * 25);
     hall.add(col);
   }
   const flames: Array<{ m: Sprite; base: number; phase: number; w: number }> = [];

@@ -23,10 +23,10 @@ export interface CameraRigImpl extends CameraRig {
 }
 
 const TARGET = new Vector3(0, 0.3, 0);
-const FOV = 38;
+const FOV = 32; // long lens: near pieces stay small, far ranks stay readable
 const DEG = Math.PI / 180;
-const LANDSCAPE_POLAR = 52 * DEG;
-const PORTRAIT_POLAR = 34 * DEG;
+const LANDSCAPE_POLAR = 46 * DEG;
+const PORTRAIT_POLAR = 36 * DEG;
 const TOP_POLAR = 4 * DEG;
 const SEAT_AZIMUTH: Record<Side, number> = { w: 0, b: Math.PI };
 
@@ -35,9 +35,11 @@ const wrapPi = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); if (a <= 0) a
 const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
 
 // Points that must stay on screen: frame corners and the tops of the tallest pieces.
+const FRAME_POINTS: Vector3[] = [];
 const FIT_POINTS: Vector3[] = [];
 for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-  FIT_POINTS.push(new Vector3(5.3 * sx, -0.2, 5.3 * sz), new Vector3(4.4 * sx, 1.6, 4.4 * sz));
+  FRAME_POINTS.push(new Vector3(5.3 * sx, 0, 5.3 * sz));
+  FIT_POINTS.push(new Vector3(5.3 * sx, 0, 5.3 * sz), new Vector3(3.6 * sx, 1.6, 3.6 * sz));
 }
 
 export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}): CameraRigImpl {
@@ -96,16 +98,27 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
 
   function recomputeFit() {
     const aspect = width / height;
-    // Portrait raises the camera (smaller polar) and reserves room for the HUD above and below the board.
+    // Portrait raises the camera (smaller polar); landscape sits lower for a cinematic player view.
     const k = clamp01((aspect - 0.7) / (1.45 - 0.7));
     seatPolar = PORTRAIT_POLAR + (LANDSCAPE_POLAR - PORTRAIT_POLAR) * k;
-    const limY = 0.8 + 0.1 * k;
-    // Landscape HUD panels flank the board (CSS --side-w = clamp(150px, 19vw, 250px) + gutter).
-    const side = Math.min(250, Math.max(150, width * 0.19)) + 14;
-    const limX = aspect > 1.05 ? Math.max(0.5, (width / 2 - side) / (width / 2)) : 0.97;
+    const limX = aspect > 1.05 ? 0.9 : 0.96;
+    const limY = aspect > 1.05 ? 0.92 : 0.82;
+    // Fit the radius, then nudge the look-at height until the board (frame corners) is vertically centred.
+    TARGET.y = 0.3;
+    for (let i = 0; i < 4; i++) {
+      seatRadius = fitRadius(seatPolar, aspect, limX, limY);
+      probe.position.set(0, TARGET.y + seatRadius * Math.cos(seatPolar), seatRadius * Math.sin(seatPolar));
+      probe.lookAt(TARGET);
+      probe.updateMatrixWorld(true);
+      let lo = Infinity, hi = -Infinity;
+      for (const p of FRAME_POINTS) { tmp.copy(p).project(probe); lo = Math.min(lo, tmp.y); hi = Math.max(hi, tmp.y); }
+      const mid = (lo + hi) / 2;
+      TARGET.y = Math.min(Math.max(TARGET.y + mid * seatRadius * Math.tan((FOV * DEG) / 2) * 0.9, -1.5), 1.5);
+    }
     seatRadius = fitRadius(seatPolar, aspect, limX, limY);
     topRadius = fitRadius(TOP_POLAR, aspect, limX, limY);
     controls.maxDistance = Math.max(30, seatRadius * 1.8);
+    controls.target.copy(TARGET);
   }
 
   function modePolar(): number { return rig.mode === 'top' ? TOP_POLAR : seatPolar; }

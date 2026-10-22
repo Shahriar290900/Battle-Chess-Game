@@ -4,7 +4,7 @@ import { SIDE_FACTION } from '../contracts';
 import type { GameModeConfig } from '../contracts';
 import type { GameEnd } from '../core/rules';
 import { ICON, clear, h, pieceIcon, svg } from './dom';
-import { REASON_LABEL, ROLE_LABEL, resultHeadline, sideName } from './glyphs';
+import { REASON_LABEL, ROLE_LABEL, resultHeadline } from './glyphs';
 import { segmented } from './menu';
 
 export interface Panel {
@@ -159,7 +159,7 @@ export function createPromotionPicker(): PromotionPicker {
       card.dataset.faction = faction;
       clear(card);
       card.append(
-        h('h2', { class: 'card-title small', text: `Raise your ${sideName(side)} pawn` }),
+        h('h2', { class: 'card-title small', text: 'Promote to' }),
         h('div', { class: 'promo-grid' }, ...PROMO_ROLES.map((r) =>
           h('button', { class: 'promo-btn', type: 'button', 'aria-label': ROLE_LABEL[r], onClick: () => done(r) },
             pieceIcon(r, faction, 'promo-ic'), h('span', { class: 'promo-name', text: ROLE_LABEL[r] })))),

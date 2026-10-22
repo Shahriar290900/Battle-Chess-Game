@@ -127,7 +127,7 @@ try {
     await page.waitForSelector('.menu-overlay:not([hidden])');
     await page.waitForTimeout(300);
     await page.screenshot({ path: join(shots, `menu-${vp.name}.png`) });
-    await page.click('text=Resume Battle');
+    await page.click('text=Resume');
     await page.waitForTimeout(300);
   }
   // Settings panel on the smallest viewport (checks scrolling card fits)
@@ -143,7 +143,7 @@ try {
   await page.click('.seg:has-text("Easy")');
   await page.waitForTimeout(200);
   await page.screenshot({ path: join(shots, 'menu-vs-ai-1280x720.png') });
-  await page.click('text=Begin Battle');
+  await page.click('text=Begin');
   await waitFor((s) => s.state === 'awaitInput' && s.plies === 0, 'vs-AI game to start');
   await page.waitForTimeout(2000);
   await play('e2', 'e4');
@@ -151,6 +151,20 @@ try {
   log('AI replied; fen =', after.fen);
   await page.waitForTimeout(1600);
   await page.screenshot({ path: join(shots, 'vs-ai-1280x720.png') });
+
+  // ---------------------------------------------------------------- one medium-quality look (menu + in-game)
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(url.replace('quality=low', 'quality=medium'), { waitUntil: 'load', timeout: 120000 });
+  await page.waitForSelector('.gate-btn:not([hidden])', { timeout: 180000 });
+  await page.click('.gate-btn');
+  await page.waitForSelector('.menu-overlay:not([hidden])', { timeout: 30000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: join(shots, 'medium-menu-1280x720.png') });
+  await page.click('text=Two Players');
+  await waitFor((s) => s.state === 'awaitInput', 'medium game to start');
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: join(shots, 'medium-game-1280x720.png') });
+  log('medium tier =', await page.evaluate(() => window.__bc.quality.tier));
 
   if (errors.length) throw new Error(`console errors:\n  ${[...new Set(errors)].join('\n  ')}`);
   log('PASS: no console errors; screenshots in', shots);
