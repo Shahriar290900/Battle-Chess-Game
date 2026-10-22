@@ -35,6 +35,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.205, 0.77, 0.03))
     r.add("arm_R", "spine", (-0.185, 0.86, 0))
     r.add("hand_R", "arm_R", (-0.20, 0.76, 0))
+    r.add("weapon", "hand_R", (-0.179, 0.487, 0.013))     # the short sword (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (-0.15, 0.64, 0.09))
     r.socket("socket_cast", "hand_L", (0.065, 0.80, 0.25))
     r.socket("socket_impact", "body", (-0.03, 0.62, 0.55))
@@ -406,15 +407,15 @@ def sword(p: Piece):
     grip_end = mouth + h_dir * 0.066
     grip = g.tube([mouth + h_dir * 0.004, grip_end], 0.0118, sides=7, samples=1, cap="flat", smooth=False, up=(0, 0, 1))
     wraps = g.instances(g.torus(0.0125, 0.0022, 10, 4), [mouth + h_dir * (0.020 + 0.024 * i) for i in range(2)], [h_dir] * 2)
-    p.add("sword_grip", merge([grip, wraps]), "EH_Leather", "hand_R", lod1="keep", uv_scale=2)
+    p.add("sword_grip", merge([grip, wraps]), "EH_Leather", "weapon", lod1="keep", uv_scale=2)
     guard = g.extrude(g.rect_poly(0.108, 0.014, 0.005, 1), 0.022, 0.004, 1).rotated(90, 0, 0)
     guard = guard.aimed(h_dir, mouth + h_dir * 0.002)
     guard = guard.rotated_axis(h_dir, 78, pivot=mouth)
     pommel = g.superellipsoid((0.0185, 0.015, 0.0185), 0.6, 0.8, 4, 10).aimed(h_dir, grip_end + h_dir * 0.010)
-    p.add("sword_guard_pommel", merge([guard, pommel]), "EH_Bronze", "hand_R", lod1="keep")
+    p.add("sword_guard_pommel", merge([guard, pommel]), "EH_Bronze", "weapon", lod1="keep")
     blade = g.blade(0.30, 0.044, 0.0085, tip=0.28, taper=0.7, fuller=0.0018, rows=3)
     blade = blade.aimed(a_s, mouth + h_dir * 0.0)
-    p.add("sword_blade", blade, "EH_Steel", "hand_R", lod1="keep", occluder=False)
+    p.add("sword_blade", blade, "EH_Steel", "weapon", lod1="keep", occluder=False)
 
 
 def bedroll_and_mantle(p: Piece):
@@ -480,7 +481,7 @@ def head(p: Piece):
 
 
 # ======================================================================================= clips
-def make_clips() -> list[Clip]:
+def make_clips(rig=None) -> list[Clip]:
     hilt_dir = unit(-(np.array([-0.206, 0.30, -0.075]) - np.array([-0.165, 0.585, 0.06])))
 
     idle = Clip("Idle", 3.0, loop=True)
@@ -529,13 +530,41 @@ def make_clips() -> list[Clip]:
     vic.keys("body", "pos", [(0, (0, 0, 0)), (0.5, (0, 0.03, 0), "out_back"), (1.6, (0, 0.03, 0))])
     vic.keys("head", "rot", [(0, (0, 0, 0)), (0.5, (-8, 0, 0), "out_cubic"), (1.6, (-8, 0, 0))])
     vic.keys("arm_L", "rot", [(0, (0, 0, 0)), (1.0, (-35, 0, 0), "out_cubic"), (1.6, (-35, 0, 0))])
-    return [idle, move, A, hit, vic]
+
+    # ---- Taunt (1.4 s): draw, beat the sword on the shield three times, then a chin-up challenge
+    T = Clip("Taunt", 1.4)
+    beat = [(0.30, -96), (0.40, -46), (0.50, -96), (0.60, -46), (0.70, -96), (0.80, -46), (0.88, -92)]
+    T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.22, (-96, 30, 0), "in_out_cubic")] + [(t, (rx, 30, 0), "in_cubic" if rx > -60 else "out_cubic") for t, rx in beat] + [(1.02, (-150, 0, 8), "out_cubic"), (1.2, (-150, 0, 8)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.22, (-38, 0, 0), "in_out_cubic"), (0.88, (-38, 0, 0)), (1.02, (-30, 0, 0), "out_cubic"), (1.2, (-30, 0, 0)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.22, (-14, 0, 0), "in_out_cubic"), (0.42, (-14, 0, 0)), (0.46, (-10, 0, 0)), (0.66, (-14, 0, 0)), (0.70, (-10, 0, 0)), (0.9, (-14, 0, 0)), (1.2, (-30, 0, 0), "out_cubic"), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "pos", [(0, (0, 0, 0)), (0.42, (0, 0, 0)), (0.46, (0, 0.012, 0.0)), (0.5, (0, 0, 0)), (0.66, (0, 0, 0)), (0.70, (0, 0.012, 0)), (0.74, (0, 0, 0)), (0.88, (0, 0, 0)), (0.92, (0, 0.014, 0)), (0.96, (0, 0, 0)), (1.02, (0, 0.03, 0), "out_cubic"), (1.2, (0, 0.03, 0)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "rot", [(0, (0, 0, 0)), (0.22, (4, 0, 0), "in_out_cubic"), (0.9, (6, 0, 0)), (1.02, (-6, 0, 0), "out_cubic"), (1.2, (-6, 0, 0)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (2, 0, 0)), (1.02, (-16, 0, 0), "out_cubic"), (1.2, (-16, 0, 0)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("spine", "rot", [(0, (0, 0, 0)), (1.02, (-6, 0, 0), "out_cubic"), (1.2, (-6, 0, 0)), (1.4, (0, 0, 0), "in_out_cubic")])
+    T.keys("top", "rot", [(0, (0, 0, 0)), (0.5, (-4, 0, 0), "in_out_cubic"), (1.02, (8, 0, 0), "out_cubic"), (1.4, (0, 0, 0), "in_out_cubic")])
+
+    # ---- Surrender (2.0 s, holds): slumps, bows, the sword slips from his hand and clatters on the plinth
+    S = Clip("Surrender", 2.0)
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.7, (10, 0, 0), "in_out_cubic"), (2.0, (12, 0, 0), "in_out_cubic")])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.7, (0, -0.03, 0.02), "in_out_cubic"), (2.0, (0, -0.035, 0.02))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.8, (14, 0, 0), "in_out_cubic"), (2.0, (16, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.8, (24, 0, 0), "in_out_cubic"), (2.0, (30, 0, 0), "in_out_cubic")])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.35, (-8, 0, 0), "in_out_cubic"), (1.0, (10, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0), "in_out_cubic")])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.0, (6, 0, 0), "in_out_cubic"), (2.0, (10, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.5, (12, 0, 0), "in_out_cubic"), (1.2, (18, 0, 0), "in_out_cubic"), (2.0, (20, 0, 0))])
+    S.keys("arm_L", "pos", [(0, (0, 0, 0)), (0.6, (0, -0.02, -0.04), "in_out_cubic"), (2.0, (0, -0.03, -0.06))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.8, (18, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0))])
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import _emberhold_common as _C
+    _C.drop_weapon(S, rig, "weapon", 0.40, tuple(unit(np.array([-0.206, 0.30, -0.075]) - np.array([-0.165, 0.585, 0.06]))), 0.22, 0.016, (0.9, 0.0, 0.45), land_xz=(-0.10, 0.20))
+    return [idle, move, A, hit, vic, T, S]
 
 
 # ======================================================================================= build
 def build(log=print):
     rig = make_rig()
-    p = Piece("emberhold", "pawn", rig, make_clips(), impact_time=0.95, strike_range=0.55, attack_style="melee", seed=3)
+    p = Piece("emberhold", "pawn", rig, make_clips(rig), impact_time=0.95, strike_range=0.55, attack_style="melee", seed=3)
     pedestal_parts(p)
     legs(p)
     skirt_belt(p)

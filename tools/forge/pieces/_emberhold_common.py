@@ -247,14 +247,15 @@ T.register(T.MaterialDef("EH_Gem", _gen_gem, 37))
 
 def solve_reach(clip, rig, driver, driver_pt, b1, b2, hand_pt, weight, step=1 / 30, axes=(0, 1, 2), lam=0.03):
     """Blend a free hand (rest point `hand_pt` on b2) toward a point `driver_pt` carried by `driver` (weapon grip).
-    weight(t) in 0..1: 0 = hand stays where its own keys put it, 1 = hand glued to the grip."""
+    weight(t) in 0..1: 0 = hand stays where its own rot keys (if any) put it, 1 = hand glued to the grip."""
     from scipy.optimize import least_squares
     dp = np.append(np.asarray(driver_pt, float), 1.0)
     hp = np.append(np.asarray(hand_pt, float), 1.0)
     inv_d = np.linalg.inv(_bone_world(rig, Clip0, driver, 0.0))
     inv_h = np.linalg.inv(_bone_world(rig, Clip0, b2, 0.0))
+    own = {b: clip.tracks.pop((b, "rot"), None) for b in (b1, b2)}      # the hand's own authored motion = its free pose
 
-    def world(bone, t, ov):
+    def world(bone, t, ov, use_own=False):
         chain, b = [], bone
         while b:
             chain.append(b)
@@ -267,8 +268,12 @@ def solve_reach(clip, rig, driver, driver_pt, b1, b2, hand_pt, weight, step=1 / 
                 loc = loc + tr.eval(t, clip.duration, (0, 0, 0))
             rot = np.zeros(3)
             tr = clip.tracks.get((b, "rot"))
-            if tr and b not in (b1, b2):
+            if tr:
                 rot = tr.eval(t, clip.duration, (0, 0, 0))
+            if b in own and own[b] is not None and use_own:
+                rot = own[b].eval(t, clip.duration, (0, 0, 0))
+            elif b in (b1, b2) and not use_own:
+                rot = np.zeros(3)
             if b in ov:
                 rot = ov[b]
             L = np.eye(4)
@@ -282,7 +287,7 @@ def solve_reach(clip, rig, driver, driver_pt, b1, b2, hand_pt, weight, step=1 / 
     for i in range(n + 1):
         t = min(i * step, clip.duration)
         w = float(weight(t))
-        free = (world(b2, t, {b1: np.zeros(3), b2: np.zeros(3)}) @ inv_h @ hp)[:3]
+        free = (world(b2, t, {}, use_own=True) @ inv_h @ hp)[:3]
         goal = (world(driver, t, {}) @ inv_d @ dp)[:3]
         target = (1 - w) * free + w * goal
 
@@ -293,9 +298,12 @@ def solve_reach(clip, rig, driver, driver_pt, b1, b2, hand_pt, weight, step=1 / 
             q = (world(b2, t, {b1: r1, b2: r2}) @ inv_h @ hp)[:3]
             return np.concatenate([(q - target) * 10.0, lam * w * x * 0.01])
         if w < 1e-4:
-            x = np.zeros_like(x0)
-        else:
-            x = least_squares(res, x0, xtol=1e-9, ftol=1e-9).x
+            fr = [own[b].eval(t, clip.duration, (0, 0, 0)) if own[b] is not None else np.zeros(3) for b in (b1, b2)]
+            k1.append((t, tuple(float(v) for v in fr[0])))
+            k2.append((t, tuple(float(v) for v in fr[1])))
+            x0 = np.zeros_like(x0)
+            continue
+        x = least_squares(res, x0, xtol=1e-9, ftol=1e-9).x
         x0 = x
         r1, r2 = [0.0] * 3, [0.0] * 3
         for k, ax in enumerate(axes):
@@ -306,3 +314,99 @@ def solve_reach(clip, rig, driver, driver_pt, b1, b2, hand_pt, weight, step=1 / 
         clip.key(b1, "rot", t, v, "linear")
     for t, v in k2:
         clip.key(b2, "rot", t, v, "linear")
+
+
+# ---- a dropped weapon: ballistic fall + bounces + spin, authored as world motion and converted to the `weapon` bone's local keys
+def _mat_to_euler(R):
+    ry = -math.asin(max(-1.0, min(1.0, R[2, 0])))
+    if abs(math.cos(ry)) < 1e-6:
+        return (0.0, math.degrees(ry), math.degrees(math.atan2(-R[0, 1], R[1, 1])))
+    return (math.degrees(math.atan2(R[2, 1], R[2, 2])), math.degrees(ry), math.degrees(math.atan2(R[1, 0], R[0, 0])))
+
+
+def drop_weapon(clip, rig, bone, t0, axis_local, floor_y, rest_y_off, heading, land_xz=None, grav=9.8, restitution=0.34, bounces=2,
+                roll_deg=180.0, kick=(0.0, 0.0, 0.0), step=1 / 30):
+    """Release `bone` (pivot = its centre of mass) from its hand at t0.  The centre falls under gravity to `floor_y + rest_y_off`,
+    bounces `bounces` times, and the long axis (`axis_local`, rest-frame direction) swings to the horizontal `heading`.
+    Call after all other tracks of the clip are final.  Holds the final pose to the end of the clip."""
+    parent = rig.bones[bone].parent
+    p0 = rig.pos(bone)
+    rest_local = rig.local(bone)
+    Mp0 = _bone_world(rig, clip, parent, t0)
+    Lrest = np.eye(4)
+    Lrest[:3, 3] = rest_local
+    W0 = Mp0 @ Lrest
+    R0, pa = W0[:3, :3], W0[:3, 3]
+    a0 = R0 @ np.asarray(axis_local, float)
+    d_h = np.asarray(heading, float)
+    d_h = d_h / np.linalg.norm(d_h)
+    R_align = g.rot_between(a0, d_h)
+    Rf_total = R_align                                  # world rotation applied on top of R0
+    # axis / angle of the alignment rotation
+    ang = math.acos(max(-1.0, min(1.0, (np.trace(Rf_total) - 1) / 2)))
+    if ang < 1e-4:
+        ax = np.array([0.0, 1.0, 0.0])
+    else:
+        ax = np.array([Rf_total[2, 1] - Rf_total[1, 2], Rf_total[0, 2] - Rf_total[2, 0], Rf_total[1, 0] - Rf_total[0, 1]]) / (2 * math.sin(ang))
+    yf = floor_y + rest_y_off
+    pf = np.array([pa[0], yf, pa[2]]) if land_xz is None else np.array([land_xz[0], yf, land_xz[1]])
+    # time line: free fall, then bounces
+    h = max(pa[1] - yf, 0.02)
+    t_fall = math.sqrt(2 * h / grav)
+    v = grav * t_fall
+    impacts = [t0 + t_fall]
+    arcs = []                                           # (t_start, t_end, v0) of each bounce arc
+    for k in range(bounces):
+        vb = v * restitution ** (k + 1)
+        dur = 2 * vb / grav
+        arcs.append((impacts[-1], impacts[-1] + dur, vb))
+        impacts.append(impacts[-1] + dur)
+    t_land = impacts[-1]
+    n = int(round(clip.duration / step))
+    s_at_impact = [0.78, 0.94, 1.0, 1.0][: len(impacts)]
+
+    def smooth(u):
+        u = min(max(u, 0.0), 1.0)
+        return u * u * (3 - 2 * u)
+
+    def state(t):
+        if t <= t0:
+            return pa, 0.0
+        if t < impacts[0]:
+            tt = t - t0
+            y = pa[1] - 0.5 * grav * tt * tt
+            u = (t - t0) / max(impacts[0] - t0, 1e-6)
+            s = s_at_impact[0] * (u ** 1.4)
+            frac = u * 0.8
+        else:
+            y, s, frac = yf, 1.0, 1.0
+            for k, (ta, tb, vb) in enumerate(arcs):
+                if ta <= t < tb:
+                    tt = t - ta
+                    y = yf + vb * tt - 0.5 * grav * tt * tt
+                    u = (t - ta) / max(tb - ta, 1e-6)
+                    s = s_at_impact[k] + (s_at_impact[k + 1] - s_at_impact[k]) * smooth(u)
+                    frac = min(1.0, (t - t0) / max(t_land - t0, 1e-6) * 0.9 + 0.1)
+                    break
+            if t >= t_land:
+                s, frac = 1.0, 1.0
+        horiz = min(1.0, (t - t0) / max(t_land - t0, 1e-6))
+        horiz = horiz * (2 - horiz)
+        pos = np.array([pa[0] + (pf[0] - pa[0]) * horiz + kick[0] * (t - t0), y, pa[2] + (pf[2] - pa[2]) * horiz + kick[2] * (t - t0)])
+        return pos, s
+
+    for i in range(n + 1):
+        t = min(i * step, clip.duration)
+        pos, s = state(t)
+        Rt = g.axis_angle(ax, math.degrees(ang) * s) @ R0
+        if roll_deg:
+            Rt = g.axis_angle(d_h if s > 0 else a0, roll_deg * s * (1 - 0.0)) @ Rt if s > 0 else Rt
+        Wt = np.eye(4)
+        Wt[:3, :3] = Rt
+        Wt[:3, 3] = pos
+        if t <= t0:
+            Wt = Mp0 @ Lrest if False else _bone_world(rig, clip, parent, t) @ Lrest
+        Mp = _bone_world(rig, clip, parent, t)
+        L = np.linalg.inv(Mp) @ Wt
+        clip.key(bone, "pos", t, tuple(L[:3, 3] - rest_local), "linear")
+        clip.key(bone, "rot", t, _mat_to_euler(L[:3, :3]), "linear")

@@ -103,6 +103,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.17, 0.84, 0.06))
     r.add("arm_R", "spine", (-0.14, 0.98, 0))
     r.add("hand_R", "arm_R", (-0.17, 0.84, 0.06))
+    r.add("weapon", "hand_R", (-0.218, 0.80, 0.16))      # the crook staff (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (-0.20, 0.92, 0.10))
     r.socket("socket_cast", "top", (-0.20, 1.12, 0.215))
     r.socket("socket_impact", "body", (0, 0.45, 1.45))
@@ -368,22 +369,22 @@ def head(p: Piece):
 def staff(p: Piece):
     path = [(-0.235, 0.226, 0.200), (-0.232, 0.40, 0.190), (-0.222, 0.62, 0.150), (-0.205, 0.80, 0.108), (-0.20, 0.92, 0.100), (-0.20, 1.10, 0.108), (-0.20, 1.28, 0.125)]
     shaft = g.tube(path, [0.0235, 0.0220, 0.0205, 0.0190, 0.0180, 0.0165, 0.0150], sides=8, samples=2, cap=None, up=(1, 0, 0))
-    p.add("staff_shaft", shaft.noised(0.0016, 30, 2, seed=40), "EH_Bronze", "hand_R", tint=lambda P: np.full(len(P), 0.62))
+    p.add("staff_shaft", shaft.noised(0.0016, 30, 2, seed=40), "EH_Bronze", "weapon", tint=lambda P: np.full(len(P), 0.62))
     crook = g.tube([(-0.20, 1.27, 0.122), (-0.20, 1.335, 0.140), (-0.20, 1.372, 0.178), (-0.20, 1.390, 0.214), (-0.20, 1.372, 0.246), (-0.20, 1.340, 0.252)],
                    [0.0150, 0.0160, 0.0165, 0.0150, 0.0120, 0.0090], sides=8, samples=2, cap="round", cap_steps=1, up=(1, 0, 0))
-    p.add("staff_crook", crook.noised(0.0014, 30, 2, seed=41), "EH_Bronze", "hand_R")
+    p.add("staff_crook", crook.noised(0.0014, 30, 2, seed=41), "EH_Bronze", "weapon")
     # grip wraps
     wraps = [g.torus(0.0228, 0.0042, 10, 4).translated(-0.20, 0.86 + 0.0125 * i, 0.10 + 0.0003 * i) for i in range(7)]
-    p.add("staff_wraps", merge(wraps), "EH_Leather", "hand_R", uv_scale=2, lod1=None)
+    p.add("staff_wraps", merge(wraps), "EH_Leather", "weapon", uv_scale=2, lod1=None)
     wraps2 = [g.torus(0.0226, 0.0045, 10, 4).translated(-0.20, 0.958 + 0.0125 * i, 0.10 + 0.0004 * i) for i in range(3)]
-    p.add("staff_wraps2", merge(wraps2), "EH_Leather", "hand_R", uv_scale=2, lod1=None)
+    p.add("staff_wraps2", merge(wraps2), "EH_Leather", "weapon", uv_scale=2, lod1=None)
     # foot cap (steel), knop rings (bronze)
     foot = g.lathe(np.array([(0.0, 0.222), (0.026, 0.224), (0.029, 0.250), (0.024, 0.290), (0.0215, 0.320), (0.0, 0.320)]), 12, crease=45).translated(-0.235, 0, 0.200)
-    p.add("staff_foot", foot, "EH_Steel", "hand_R")
+    p.add("staff_foot", foot, "EH_Steel", "weapon")
     ypts = [0.226, 0.40, 0.62, 0.80, 0.92, 1.10, 1.28]; xs = [-0.235, -0.232, -0.222, -0.205, -0.20, -0.20, -0.20]; zs = [0.200, 0.190, 0.150, 0.108, 0.100, 0.108, 0.125]
     knops = [g.torus(0.0225 - 0.0003 * i, 0.0070, 12, 4).translated(float(np.interp(y, ypts, xs)), y, float(np.interp(y, ypts, zs))) for i, y in enumerate((0.45, 0.62, 1.04, 1.18))]
     knops.append(g.superellipsoid((0.026, 0.020, 0.026), 0.6, 0.6, 4, 9).translated(-0.20, 1.255, 0.119))
-    p.add("staff_knops", merge(knops), "EH_Bronze", "hand_R")
+    p.add("staff_knops", merge(knops), "EH_Bronze", "weapon")
     # flame-tine finial ring around the crook neck
     tines = []
     for i in range(5):
@@ -391,7 +392,7 @@ def staff(p: Piece):
         t = g.tube([(0, 0, 0), (0.008, 0.020, 0), (0.002, 0.046, 0)], [0.0070, 0.0058, 0.0], sides=4, samples=1, cap=None, smooth=False, up=(0, 0, 1))
         tines.append(t.rotated(0, a, 0).rotated(0, 0, 0).translated(-0.20 + 0.0 * math.sin(a), 0, 0))
     tm = merge(tines)
-    p.add("staff_tines", tm.rotated(18, 0, 0).translated(0, 1.283, 0.128), "EH_Bronze", "hand_R", lod1=None)
+    p.add("staff_tines", tm.rotated(18, 0, 0).translated(0, 1.283, 0.128), "EH_Bronze", "weapon", lod1=None)
 
 
 def censer(p: Piece):
@@ -451,7 +452,7 @@ def make_clips(rig) -> list[Clip]:
     idle.keys("head", "rot", [(0, (0, 0, 0)), (1.8, (-1.5, 1.0, 0), "in_out_cubic"), (3.6, (0, 0, 0), "in_out_cubic")])
     idle.keys("hand_R", "rot", [(0, (0, 0, 0)), (2.7, (0, 0, 1), "in_out_cubic"), (3.6, (0, 0, 0), "in_out_cubic")])
     idle.keys("body", "pos", [(0, (0, 0, 0)), (1.8, (0, 0.003, 0), "in_out_cubic"), (3.6, (0, 0, 0), "in_out_cubic")])
-    C.follow(idle, rig, "top", "hand_R")
+    C.follow(idle, rig, "top", "weapon")
 
     move = Clip("Move", 1.0, loop=True)
     move.keys("body", "rot", [(0, (4, 0, 0)), (0.25, (5, 0, 2), "in_out_cubic"), (0.5, (6, 0, 0), "in_out_cubic"), (0.75, (5, 0, -2), "in_out_cubic"), (1.0, (4, 0, 0), "in_out_cubic")])
@@ -459,7 +460,7 @@ def make_clips(rig) -> list[Clip]:
     move.keys("top", "rot", [(0, (12, 0, 0)), (0.5, (-14, 0, 0), "in_out_cubic"), (1.0, (12, 0, 0), "in_out_cubic")])
     move.keys("spine", "rot", [(0, (2, 0, 0)), (0.5, (3, 0, 0), "in_out_cubic"), (1.0, (2, 0, 0), "in_out_cubic")])
     move.keys("head", "rot", [(0, (-2, 0, 0)), (0.5, (-3, 0, 0), "in_out_cubic"), (1.0, (-2, 0, 0), "in_out_cubic")])
-    C.follow(move, rig, "top", "hand_R")
+    C.follow(move, rig, "top", "weapon")
 
     A = Clip("Attack", 2.4, fps=60)
     # staff is carried on hand_R (elbow pivot): arm and elbow counter-rotate so the crook leads and the foot stays planted until the thrust
@@ -474,7 +475,7 @@ def make_clips(rig) -> list[Clip]:
     A.keys("top", "rot", [(0, (0, 0, 0)), (0.30, (-35, 0, 0), "in_out_cubic"), (0.50, (0, 0, 50), "in_out_cubic"), (0.70, (45, 0, 0), "in_out_cubic"),
                           (0.90, (0, 0, -55), "in_out_cubic"), (0.95, (-60, 0, 0), "in_out_cubic"), (1.10, (-85, 0, 0), "in_cubic"), (1.30, (-60, 0, 0), "out_quad"),
                           (1.60, (10, 0, 0), "in_out_cubic"), (1.90, (-6, 0, 0), "in_out_cubic"), (2.15, (3, 0, 0), "in_out_cubic"), (2.4, (0, 0, 0), "in_out_cubic")])
-    C.follow(A, rig, "top", "hand_R")
+    C.follow(A, rig, "top", "weapon")
 
     hit = Clip("HitReact", 0.45)
     hit.keys("body", "rot", [(0, (0, 0, 0)), (0.10, (-11, 0, 0), "out_cubic"), (0.45, (-4, 0, 0), "in_out_cubic")])
@@ -484,7 +485,7 @@ def make_clips(rig) -> list[Clip]:
     hit.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.10, (6, 0, 0), "out_cubic"), (0.45, (1, 0, 0), "in_out_cubic")])
     hit.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.10, (-6, 0, 0), "out_cubic"), (0.45, (-1, 0, 0), "in_out_cubic")])
     hit.keys("top", "rot", [(0, (0, 0, 0)), (0.10, (30, 0, 0), "out_cubic"), (0.28, (-12, 0, 0), "in_out_cubic"), (0.45, (8, 0, 0), "in_out_cubic")])
-    C.follow(hit, rig, "top", "hand_R")
+    C.follow(hit, rig, "top", "weapon")
 
     vic = Clip("Victory", 1.8)
     vic.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.6, (-30, 0, 0), "out_back"), (1.8, (-30, 0, 0))])
@@ -493,8 +494,34 @@ def make_clips(rig) -> list[Clip]:
     vic.keys("spine", "rot", [(0, (0, 0, 0)), (0.6, (-6, 0, 0), "out_cubic"), (1.8, (-6, 0, 0))])
     vic.keys("arm_L", "rot", [(0, (0, 0, 0)), (1.0, (-25, 0, 0), "out_cubic"), (1.8, (-25, 0, 0))])
     vic.keys("top", "rot", [(0, (0, 0, 0)), (0.6, (-30, 0, 0), "out_cubic"), (0.8, (30, 0, 0), "in_out_cubic"), (1.0, (-20, 0, 0), "in_out_cubic"), (1.3, (10, 0, 0), "in_out_cubic"), (1.8, (3, 0, 0), "in_out_cubic")])
-    C.follow(vic, rig, "top", "hand_R")
-    return [idle, move, A, hit, vic]
+    C.follow(vic, rig, "top", "weapon")
+
+    # ---- Taunt (1.5 s): the censer is whirled in a wide horizontal circle above the hood, then the left hand points at the enemy king
+    T = Clip("Taunt", 1.5)
+    T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.20, (-10, 0, 0), "in_out_cubic"), (1.15, (-14, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.20, (10, 0, 0), "in_out_cubic"), (1.15, (16, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("top", "rot", [(0, (0, 0, 0)), (0.18, (-40, 0, 0), "in_out_cubic"), (0.32, (-90, 0, 0), "in_out_cubic"), (0.46, (-10, 0, 90), "in_out_cubic"), (0.60, (90, 0, 0), "in_out_cubic"),
+                          (0.74, (10, 0, -90), "in_out_cubic"), (0.88, (-90, 0, 0), "in_out_cubic"), (1.02, (-30, 0, 40), "in_out_cubic"), (1.25, (8, 0, -6), "in_out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.78, (-8, 0, 0), "in_out_cubic"), (1.0, (-92, 0, -6), "out_cubic"), (1.28, (-92, 0, -6)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("hand_L", "rot", [(0, (0, 0, 0)), (1.0, (-10, 0, 0), "out_cubic"), (1.28, (-10, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("spine", "rot", [(0, (0, 0, 0)), (0.5, (-4, 0, 6), "in_out_cubic"), (1.0, (-6, 0, 0), "in_out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("head", "rot", [(0, (0, 0, 0)), (0.5, (-8, 0, 0), "in_out_cubic"), (1.0, (-10, 4, 0), "in_out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "pos", [(0, (0, 0, 0)), (1.0, (0, 0.012, 0.03), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    C.follow(T, rig, "top", "weapon")
+
+    # ---- Surrender (2.2 s, holds): bows his hooded head, the staff slips and clatters on the plinth, the censer sags and lies still
+    S = Clip("Surrender", 2.2)
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.9, (16, 0, 0), "in_out_cubic"), (2.2, (20, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (26, 0, 0), "in_out_cubic"), (2.2, (32, 0, 0), "in_out_cubic")])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.9, (0, -0.025, 0.02), "in_out_cubic"), (2.2, (0, -0.03, 0.02))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.9, (5, 0, 0), "in_out_cubic"), (2.2, (6, 0, 0))])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.35, (-6, 0, 0), "in_out_cubic"), (1.0, (12, 0, 0), "in_out_cubic"), (2.2, (16, 0, 0))])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.0, (8, 0, 0), "in_out_cubic"), (2.2, (10, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.6, (10, 0, 0), "in_out_cubic"), (2.2, (14, 0, 0))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.30, (-14, 0, 0), "in_out_cubic"), (0.62, (22, 0, 8), "in_out_cubic"), (0.95, (-12, 0, 40), "in_out_cubic"), (1.3, (0, 0, 74), "in_out_cubic"), (2.2, (0, 0, 78))])
+    C.drop_weapon(S, rig, "weapon", 0.50, (0.03, 1.0, 0.012), 0.22, 0.022, (0.82, 0.0, 0.55), land_xz=(-0.04, 0.22), roll_deg=60.0)
+    C.follow(S, rig, "top", "weapon")
+    return [idle, move, A, hit, vic, T, S]
 
 
 # ======================================================================================= forward lean

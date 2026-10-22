@@ -417,7 +417,23 @@ def make_clips() -> list[Clip]:
     vic.keys("body", "pos", [(0, (0, 0, 0)), (0.4, (0, 0.03, 0), "out_back"), (1.4, (0, 0, 0), "in_out_cubic")])
     vic.keys("top", "scale", [(0, (1, 1, 1)), (0.4, (1.1, 1.5, 1.1), "out_cubic"), (0.9, (1.05, 1.25, 1.05), "in_out_cubic"), (1.4, (1.05, 1.25, 1.05))])
     vic.keys("top", "rot", [(0, (0, 0, 0)), (0.9, (0, 0, 3), "in_out_cubic"), (1.4, (0, 0, 3))])
-    return [idle, move, A, hit, vic]
+
+    # ---- Taunt (1.2 s): the brazier roars up and the whole tower lurches at the enemy
+    T = Clip("Taunt", 1.2)
+    T.keys("top", "scale", [(0, (1, 1, 1)), (0.22, (1.05, 0.8, 1.05), "in_out_cubic"), (0.42, (1.30, 1.85, 1.30), "out_cubic"), (0.80, (1.18, 1.55, 1.18), "in_out_cubic"), (1.2, (1, 1, 1), "in_out_cubic")])
+    T.keys("top", "rot", [(0, (0, 0, 0)), (0.42, (-8, 0, 0), "out_cubic"), (0.80, (6, 0, 2), "in_out_cubic"), (1.2, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "scale", [(0, (1, 1, 1)), (0.22, (1.04, 0.94, 1.04), "in_out_cubic"), (0.42, (0.97, 1.06, 0.97), "out_cubic"), (0.55, (1.03, 0.96, 1.03), "in_cubic"), (1.2, (1, 1, 1), "in_out_cubic")])
+    T.keys("body", "pos", [(0, (0, 0, 0)), (0.22, (0, -0.02, -0.04), "in_out_cubic"), (0.46, (0, 0, 0.12), "out_cubic"), (0.58, (0, -0.02, 0.12), "in_cubic"), (0.9, (0, 0, 0.05), "in_out_cubic"), (1.2, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "rot", [(0, (0, 0, 0)), (0.22, (-3, 0, 0), "in_out_cubic"), (0.46, (9, 0, 0), "out_cubic"), (0.58, (7, 0, 0)), (1.2, (0, 0, 0), "in_out_cubic")])
+
+    # ---- Surrender (2.0 s, holds): the brazier fire dies down to embers and the tower sags and settles
+    S = Clip("Surrender", 2.0)
+    S.keys("top", "scale", [(0, (1, 1, 1)), (0.30, (1.12, 1.35, 1.12), "out_cubic"), (1.2, (1.0, 0.14, 1.0), "in_out_cubic"), (2.0, (0.96, 0.08, 0.96), "in_out_cubic")])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (1.2, (4, 0, 2), "in_out_cubic"), (2.0, (5, 0, 3))])
+    S.keys("body", "scale", [(0, (1, 1, 1)), (0.5, (1.03, 0.97, 1.03), "in_out_cubic"), (1.3, (1.05, 0.90, 1.05), "in_out_cubic"), (2.0, (1.06, 0.88, 1.06), "in_out_cubic")])
+    S.keys("body", "pos", [(0, (0, 0, 0)), (1.3, (0, -0.03, 0.02), "in_out_cubic"), (2.0, (0, -0.035, 0.02))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (1.3, (5, 0, 1.5), "in_out_cubic"), (2.0, (6, 0, 2))])
+    return [idle, move, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

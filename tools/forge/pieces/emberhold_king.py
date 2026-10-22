@@ -44,6 +44,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.30, 1.05, 0.05))
     r.add("arm_R", "spine", (-0.31, 1.30, 0))
     r.add("hand_R", "arm_R", (-0.30, 1.05, 0.05))
+    r.add("weapon", "hand_R", (SW_X, 0.76, SW_Z))     # the greatsword (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (SW_X, Y_TIP, SW_Z))
     r.socket("socket_cast", "body", (0, 0.90, 0.30))
     r.socket("socket_impact", "body", (-0.02, 0.70, 0.60))
@@ -374,31 +375,31 @@ def sword(p: Piece):
     blade = g.blade(L, W, 0.026, tip=0.30, taper=0.80, fuller=0.0045, rows=7)
     blade = blade.rotated(0, 0, 180).translated(SW_X, Y_TIP + L, SW_Z)
     # battle nicks: a few notches along the right edge (small dark steel wedges are enough: shallow displacement)
-    p.add("sword_blade", blade, "EH_Steel", "hand_R", lod1="keep", occluder=False)
+    p.add("sword_blade", blade, "EH_Steel", "weapon", lod1="keep", occluder=False)
     # fuller ember line (subtle F2): a thin groove seam, both faces
     seam = g.tube([(SW_X, Y_TIP + 0.12, SW_Z + 0.0125), (SW_X, Y_TIP + 0.38, SW_Z + 0.0135), (SW_X, Y_TIP + 0.58, SW_Z + 0.0125)], 0.0030, sides=4, samples=2, cap="round", cap_steps=1, ellipse=(1.4, 0.7), up=(0, 0, 1))
-    p.add("sword_fuller_ember", seam, "EH_EmberVein", "hand_R", lod1="keep", bake=False)
+    p.add("sword_fuller_ember", seam, "EH_EmberVein", "weapon", lod1="keep", bake=False)
     # crossguard with down-turned tips
     poly = np.array([(-0.165, 0.905), (-0.150, 0.880), (-0.125, 0.912), (-0.050, 0.896), (0.0, 0.884), (0.050, 0.896), (0.125, 0.912), (0.150, 0.880), (0.165, 0.905),
                      (0.130, 0.948), (0.050, 0.952), (-0.050, 0.952), (-0.130, 0.948)])
     guard = g.extrude(poly - [0, 0.0], 0.040, 0.010, 1).translated(SW_X, 0.0, SW_Z)
-    p.add("sword_guard", guard.noised(0.0012, 30, 2, seed=51), "EH_Bronze", "hand_R", lod1="keep")
+    p.add("sword_guard", guard.noised(0.0012, 30, 2, seed=51), "EH_Bronze", "weapon", lod1="keep")
     ball = [g.superellipsoid((0.018, 0.018, 0.020), 0.7, 0.7, 4, 8).translated(SW_X + s * 0.163, 0.903, SW_Z) for s in (-1, 1)]
-    p.add("sword_guard_balls", merge(ball), "EH_Bronze", "hand_R", lod1=None)
+    p.add("sword_guard_balls", merge(ball), "EH_Bronze", "weapon", lod1=None)
     # grip with leather wraps, collar and pommel
     grip = g.tube([(SW_X, 0.946, SW_Z), (SW_X, 1.245, SW_Z)], 0.0165, sides=8, samples=1, cap="flat", smooth=False)
-    p.add("sword_grip", grip, "EH_Leather", "hand_R", uv_scale=2, lod1="keep")
+    p.add("sword_grip", grip, "EH_Leather", "weapon", uv_scale=2, lod1="keep")
     wraps = [g.torus(0.0172, 0.0038, 10, 4).translated(SW_X, 0.962 + 0.0235 * i, SW_Z) for i in range(12)]
-    p.add("sword_wraps", merge(wraps), "EH_Leather", "hand_R", uv_scale=2, lod1=None)
+    p.add("sword_wraps", merge(wraps), "EH_Leather", "weapon", uv_scale=2, lod1=None)
     collar = g.lathe(np.array([(0.018, 0.940), (0.030, 0.944), (0.032, 0.960), (0.030, 0.972), (0.020, 0.974)]), 14, crease=45).translated(SW_X, 0, SW_Z)
-    p.add("sword_collar", collar, "EH_Bronze", "hand_R", lod1=None)
+    p.add("sword_collar", collar, "EH_Bronze", "weapon", lod1=None)
     pommel = g.lathe(np.array([(0.0, -0.020), (0.036, -0.020), (0.042, -0.008), (0.042, 0.008), (0.036, 0.020), (0.0, 0.020)]), 24, crease=40).rotated(90, 0, 0).translated(SW_X, 1.272, SW_Z)
-    p.add("sword_pommel", pommel, "EH_Bronze", "hand_R", lod1="keep")
+    p.add("sword_pommel", pommel, "EH_Bronze", "weapon", lod1="keep")
     nut = g.superellipsoid((0.018, 0.016, 0.018), 0.7, 0.7, 4, 8).translated(SW_X, 1.300, SW_Z)
-    p.add("sword_pommel_nut", nut, "EH_Bronze", "hand_R", lod1=None)
+    p.add("sword_pommel_nut", nut, "EH_Bronze", "weapon", lod1=None)
     # forge ring etched into the pommel face
     pr = g.torus(0.028, 0.0036, 16, 4).rotated(90, 0, 0).translated(SW_X, 1.272, SW_Z + 0.021)
-    p.add("sword_pommel_ring", pr, "EH_Steel", "hand_R", lod1=None)
+    p.add("sword_pommel_ring", pr, "EH_Steel", "weapon", lod1=None)
 
 
 # ======================================================================================= clips
@@ -454,7 +455,32 @@ def make_clips(rig) -> list[Clip]:
     vic.keys("body", "pos", [(0, (0, 0, 0)), (0.7, (0, 0.02, 0), "out_cubic"), (2.0, (0, 0.02, 0))])
     vic.keys("top", "rot", [(0, (0, 0, 0)), (0.7, (14, 0, 0), "out_cubic"), (1.2, (-4, 0, 0), "in_out_cubic"), (2.0, (4, 0, 0), "in_out_cubic")])
     hold(vic)
-    return [idle, move, A, hit, vic]
+
+    # ---- Taunt (1.5 s): heft the greatsword overhead, then slam the point back down into the plinth, chin up
+    T = Clip("Taunt", 1.5)
+    T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.20, (-4, 0, 0), "in_out_cubic"), (0.62, (-150, 0, 0), "in_out_cubic"), (0.74, (-150, 0, 0)), (0.88, (0, 0, 0), "in_cubic"), (1.5, (0, 0, 0))])
+    T.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.62, (-45, 0, 0), "in_out_cubic"), (0.74, (-45, 0, 0)), (0.88, (0, 0, 0), "in_cubic"), (1.5, (0, 0, 0))])
+    T.keys("spine", "rot", [(0, (0, 0, 0)), (0.20, (3, 0, 0), "in_out_cubic"), (0.62, (-12, 0, 0), "in_out_cubic"), (0.74, (-12, 0, 0)), (0.88, (10, 0, 0), "in_cubic"), (1.15, (-3, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("head", "rot", [(0, (0, 0, 0)), (0.20, (6, 0, 0), "in_out_cubic"), (0.62, (-6, 0, 0), "in_out_cubic"), (0.88, (8, 0, 0), "in_cubic"), (1.15, (-10, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "pos", [(0, (0, 0, 0)), (0.62, (0, 0.02, 0), "in_out_cubic"), (0.74, (0, 0.02, 0)), (0.88, (0, -0.035, 0), "in_cubic"), (1.1, (0, 0, 0), "out_cubic"), (1.5, (0, 0, 0))])
+    T.keys("top", "rot", [(0, (0, 0, 0)), (0.62, (6, 0, 0), "in_out_cubic"), (0.88, (24, 0, 0), "in_cubic"), (1.2, (-4, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    hold(T)
+
+    # ---- Surrender (2.4 s, holds): falls to his knees, head bowed, lets the greatsword fall and clatter on the plinth
+    S = Clip("Surrender", 2.4)
+    S.keys("body", "pos", [(0, (0, 0, 0)), (0.20, (0, 0, 0), "in_out_cubic"), (0.95, (0, -0.25, 0.04), "in_out_cubic"), (2.4, (0, -0.25, 0.04))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.95, (4, 0, 0), "in_out_cubic"), (2.4, (4, 0, 0))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.30, (-3, 0, 0), "in_out_cubic"), (1.00, (22, 0, 0), "in_out_cubic"), (2.4, (26, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.30, (-4, 0, 0), "in_out_cubic"), (1.05, (38, 0, 0), "in_out_cubic"), (2.4, (44, 0, 0), "in_out_cubic")])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.50, (-6, 0, 0), "in_out_cubic"), (1.20, (14, 0, 0), "in_out_cubic"), (2.4, (18, 0, 0), "in_out_cubic")])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.50, (0, 0, 0)), (1.20, (52, 0, 0), "in_out_cubic"), (2.4, (60, 0, 0), "in_out_cubic")])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.50, (-6, 0, 0)), (1.20, (14, 0, 0), "in_out_cubic"), (2.4, (18, 0, 0), "in_out_cubic")])
+    S.keys("hand_L", "rot", [(0, (0, 0, 0)), (0.50, (0, 0, 0)), (1.20, (52, 0, 0), "in_out_cubic"), (2.4, (60, 0, 0), "in_out_cubic")])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.9, (12, 0, 0), "in_out_cubic"), (1.2, (-6, 0, 0), "in_out_cubic"), (2.4, (0, 0, 0), "in_out_cubic")])
+    rel = lambda t: 1.0 - float(smoothstep(0.55, 0.85, t))
+    C.solve_reach(S, rig, "weapon", (SW_X, 1.19, SW_Z), "arm_L", "hand_L", (SW_X, 1.19, SW_Z), rel, axes=(0,))
+    C.drop_weapon(S, rig, "weapon", 0.62, (0, 1, 0), 0.22, 0.035, (1.0, 0.0, 0.35), land_xz=(-0.02, 0.27), kick=(0.0, 0, 0.0))
+    return [idle, move, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

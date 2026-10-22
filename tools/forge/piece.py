@@ -40,6 +40,37 @@ DEFAULT_EXTRAS = {  # attackStyle, impactTime, strikeRange
 }
 
 
+def _jpeg(a, q, ss):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.fromarray(a).save(buf, format="JPEG", quality=q, subsampling=ss, optimize=True)
+    return buf.getvalue()
+
+
+def _half(a):
+    """2x box downsample of a (n,n[,c]) array (tileable inputs stay tileable)."""
+    return 0.25 * (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2])
+
+
+def _encode_set(ts):
+    """Size-tuned encoding of a texture set (the geometry is >50 % of a GLB, the normal maps most of the rest).
+    256 px piece sets: colour / ORM / emissive at full size, normal map from the half-res height field (128 px).
+    128 px fragment sets: colour / emissive full, ORM and normal at 64 px.  JPEG 4:2:0 for colour and emissive."""
+    if not ts.jpeg:
+        return ts.images()
+    n = ts.albedo.shape[0]
+    frag = n <= 128
+    u8 = T.to_u8
+    base = _jpeg(u8(ts.albedo), 78 if frag else 80, 2)
+    orm_a = u8(np.stack([ts.ao, ts.rough, ts.metal], -1))
+    orm = _jpeg(u8(_half(np.stack([ts.ao, ts.rough, ts.metal], -1))) if frag else orm_a, 72 if frag else 76, 0)
+    h = _half(ts.height)
+    nrm = _jpeg(u8(T.height_to_normal(h, ts.normal_strength)), 76 if frag else 80, 0)
+    emi = None if ts.emissive is None else _jpeg(u8(ts.emissive), 78 if frag else 80, 2)
+    return base, orm, nrm, emi, "image/jpeg"
+
+
 @dataclass
 class Part:
     name: str
@@ -171,7 +202,7 @@ class Piece:
         if name in cache:
             return cache[name]
         ts = T.get_texture_set(name, res or self.tex_res)
-        base, orm, normal, emi, mime = ts.images()
+        base, orm, normal, emi, mime = _encode_set(ts)
         has_emi = emi is not None
         cache[name] = g.material(
             name, base_color=(1, 1, 1, 1), metallic=1.0, roughness=1.0,

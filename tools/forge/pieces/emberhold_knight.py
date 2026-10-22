@@ -41,6 +41,7 @@ def make_rig() -> Rig:
     r.add("hand_L", "arm_L", (0.115, 0.95, 0.03))
     r.add("arm_R", "spine", (-0.105, 1.04, -0.03))
     r.add("hand_R", "arm_R", (-0.12, 0.95, 0.04))
+    r.add("weapon", "hand_R", (-0.16, 1.04, 0.14))      # the lance (centre of mass): lets Surrender drop it
     r.socket("socket_weapon_R", "hand_R", (-0.16, 1.30, 0.44))
     r.socket("socket_cast", "mount_head", (0, 1.00, 0.36))
     r.socket("socket_impact", "body", (-0.10, 0.75, 0.58))
@@ -433,15 +434,15 @@ def lance(p: Piece):
     mid = np.array([-0.16, 0.95, 0.04])
     tip = np.array([-0.16, 1.24, 0.38])
     shaft = g.tube([base, mid, tip], [0.015, 0.0135, 0.0105], sides=8, samples=3, cap="round", cap_steps=1, up=(1, 0, 0))
-    p.add("r_lance_shaft", shaft.noised(0.0012, 30, 2, seed=60), "EH_Leather", "hand_R", uv_scale=2)
+    p.add("r_lance_shaft", shaft.noised(0.0012, 30, 2, seed=60), "EH_Leather", "weapon", uv_scale=2)
     d = C.unit(tip - mid)
     rings = [g.torus(0.0165 - 0.002 * i, 0.0050, 10, 4).aimed(d, mid + (tip - mid) * u) for i, u in enumerate((0.28, 0.55, 0.82))]
     rings.append(g.torus(0.0170, 0.0055, 10, 4).aimed(C.unit(mid - base), base + (mid - base) * 0.18))
-    p.add("r_lance_rings", merge(rings), "EH_Bronze", "hand_R")
+    p.add("r_lance_rings", merge(rings), "EH_Bronze", "weapon")
     head = g.blade(0.105, 0.040, 0.011, tip=0.45, taper=0.9, fuller=0.0015, rows=3).aimed(d, tip - d * 0.005)
     collar = g.lathe(np.array([(0.0125, 0.0), (0.021, 0.006), (0.021, 0.022), (0.014, 0.030), (0.0105, 0.032)]), 10, crease=45).aimed(d, tip - d * 0.020)
-    p.add("r_lance_head", head, "EH_Steel", "hand_R", occluder=False)
-    p.add("r_lance_collar", collar, "EH_Bronze", "hand_R")
+    p.add("r_lance_head", head, "EH_Steel", "weapon", occluder=False)
+    p.add("r_lance_collar", collar, "EH_Bronze", "weapon")
     # pennon: swallow-tail cloth streaming back (soft: rides the shaft, flutters at the free end)
     pen = np.array([(0, 0.014), (-0.150, 0.046), (-0.115, 0.0), (-0.150, -0.046), (0, -0.014)])
     cloth = g.extrude(pen, 0.004, 0.0008, 1)
@@ -449,7 +450,7 @@ def lance(p: Piece):
     pos = mid + (tip - mid) * 0.80
     cloth = cloth.rotated(0, 90, 0).translated(*(pos + [0.0, 0.0, 0.0]))
     cloth = g.warp(cloth, lambda P: P - np.column_stack([np.zeros(len(P)), 0.04 * np.clip(-(P[:, 2] - pos[2]), 0, None) ** 1.3, np.zeros(len(P))]), 60)
-    p.add("r_pennon", cloth, "EH_Cloth", "hand_R", uv_scale=2, lod1=None)
+    p.add("r_pennon", cloth, "EH_Cloth", "weapon", uv_scale=2, lod1=None)
     # reins: from the left hand to the elk's bit
     reins = g.tube([(0.115, 0.915, 0.075), (0.070, 0.935, 0.200), (0.030, 0.915, 0.350), (0.0, 0.870, 0.470)], 0.0042, sides=4, samples=2, cap="round", cap_steps=1, up=(0, 0, 1))
     p.add("r_reins", reins, "EH_Leather", "hand_L", uv_scale=2, lod1=None)
@@ -570,7 +571,39 @@ def make_clips(rig) -> list[Clip]:
     vic.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.6, (-150, 0, 0), "out_back"), (1.8, (-150, 0, 0))])
     vic.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.6, (-25, 0, 0), "out_back"), (1.8, (-25, 0, 0))])
     vic.keys("head", "rot", [(0, (0, 0, 0)), (0.6, (-8, 0, 0), "out_cubic"), (1.8, (-8, 0, 0))])
-    return [idle, move, A, hit, vic]
+
+    # ---- Taunt (1.5 s): the elk rears, comes down stamping (twice), the rider levels the lance at the enemy king
+    T = Clip("Taunt", 1.5)
+    T.keys("mount_body", "rot", [(0, (0, 0, 0)), (0.45, (-30, 0, 0), "in_out_cubic"), (0.58, (-32, 0, 0)), (0.74, (5, 0, 0), "in_cubic"), (0.86, (-4, 0, 0), "out_cubic"), (0.98, (4, 0, 0), "in_cubic"),
+                                 (1.10, (-1, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("mount_body", "pos", [(0, (0, 0, 0)), (0.45, (0, 0.06, 0), "in_out_cubic"), (0.58, (0, 0.07, 0)), (0.74, (0, -0.025, 0), "in_cubic"), (0.86, (0, 0.01, 0), "out_cubic"), (0.98, (0, -0.02, 0), "in_cubic"),
+                                 (1.10, (0, 0, 0), "out_cubic"), (1.5, (0, 0, 0))])
+    T.keys("mount_head", "rot", [(0, (0, 0, 0)), (0.45, (-22, 0, 0), "in_out_cubic"), (0.58, (-26, 0, 0)), (0.74, (14, 0, 0), "in_cubic"), (0.98, (10, 0, 0)), (1.2, (-4, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("body", "rot", [(0, (0, 0, 0)), (0.45, (22, 0, 0), "in_out_cubic"), (0.58, (24, 0, 0)), (0.74, (0, 0, 0), "in_cubic"), (1.5, (0, 0, 0))])
+    T.keys("spine", "rot", [(0, (0, 0, 0)), (0.45, (6, 0, 0), "in_out_cubic"), (0.74, (-2, 0, 0)), (1.1, (-5, 0, 0), "in_out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("head", "rot", [(0, (0, 0, 0)), (1.1, (-6, 5, 0), "in_out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+    # lance elevation = 41 deg - (sum of pitches down the chain): held up while rearing, then levelled at the target
+    T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.45, (-16, 0, 0), "in_out_cubic"), (0.74, (-10, 0, 0)), (1.02, (-24, 0, 0), "in_out_cubic"), (1.32, (-24, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.45, (-6, 0, 0), "in_out_cubic"), (0.74, (8, 0, 0)), (1.02, (38, 0, 0), "in_out_cubic"), (1.32, (38, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
+    T.keys("top", "rot", [(0, (0, 0, 0)), (0.45, (-26, 0, 0), "in_out_cubic"), (0.74, (12, 0, 0), "in_cubic"), (1.1, (-8, 0, 0), "out_cubic"), (1.5, (0, 0, 0), "in_out_cubic")])
+
+    # ---- Surrender (2.2 s, holds): the elk's head sinks, the rider slumps, the lance slips and clatters on the plinth
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import _emberhold_common as _C
+    S = Clip("Surrender", 2.2)
+    S.keys("mount_head", "rot", [(0, (0, 0, 0)), (0.9, (28, 0, 0), "in_out_cubic"), (2.2, (34, 0, 0), "in_out_cubic")])
+    S.keys("mount_body", "rot", [(0, (0, 0, 0)), (0.9, (4, 0, 0), "in_out_cubic"), (2.2, (5, 0, 0))])
+    S.keys("mount_body", "pos", [(0, (0, 0, 0)), (0.9, (0, -0.03, 0), "in_out_cubic"), (2.2, (0, -0.035, 0))])
+    S.keys("body", "rot", [(0, (0, 0, 0)), (0.9, (8, 0, 0), "in_out_cubic"), (2.2, (10, 0, 0))])
+    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.9, (16, 0, 0), "in_out_cubic"), (2.2, (20, 0, 0), "in_out_cubic")])
+    S.keys("head", "rot", [(0, (0, 0, 0)), (0.9, (22, 0, 0), "in_out_cubic"), (2.2, (28, 0, 0), "in_out_cubic")])
+    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.4, (-4, 0, 0), "in_out_cubic"), (1.0, (14, 0, 0), "in_out_cubic"), (2.2, (18, 0, 0))])
+    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (1.0, (10, 0, 0), "in_out_cubic"), (2.2, (14, 0, 0))])
+    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (1.0, (16, 0, 0), "in_out_cubic"), (2.2, (20, 0, 0))])
+    S.keys("top", "rot", [(0, (0, 0, 0)), (0.9, (22, 0, 0), "in_out_cubic"), (2.2, (26, 0, 0))])
+    _C.drop_weapon(S, rig, "weapon", 0.45, tuple(_C.unit(np.array([0.0, 0.52, 0.60]))), 0.22, 0.022, (0.0, 0.0, 1.0), land_xz=(-0.30, 0.02), roll_deg=90.0)
+    return [idle, move, A, hit, vic, T, S]
 
 
 # ======================================================================================= build

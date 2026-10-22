@@ -14,9 +14,14 @@ primitives (one per material) per mesh.
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
+import os
+import shutil
 import struct
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -221,7 +226,30 @@ class GlbBuilder:
         self.g["scenes"][0]["nodes"] = list(roots)
 
     # ---------------------------------------------------------------- output
-    def to_bytes(self) -> bytes:
+    def to_bytes(self, pack=True) -> bytes:
+        """GLB bytes.  With pack=True (default) the file is post-processed by tools/forge/meshopt_pack.mjs (EXT_meshopt_compression,
+        vertex reorder, exponent-filtered floats) - ~50 % smaller.  Falls back to the plain GLB if node is unavailable or
+        FORGE_NO_PACK is set."""
+        raw = self._plain_bytes()
+        if not pack or os.environ.get("FORGE_NO_PACK"):
+            return raw
+        node = shutil.which("node") or next(iter(sorted(glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin/node")), reverse=True)), None)
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meshopt_pack.mjs")
+        if not node or not os.path.exists(script):
+            print("  [gltf_writer] node / meshopt_pack.mjs not found: writing an uncompressed GLB")
+            return raw
+        with tempfile.TemporaryDirectory() as td:
+            a, b = os.path.join(td, "in.glb"), os.path.join(td, "out.glb")
+            with open(a, "wb") as fh:
+                fh.write(raw)
+            r = subprocess.run([node, script, a, b], capture_output=True, text=True)
+            if r.returncode != 0:
+                print("  [gltf_writer] meshopt_pack failed, writing an uncompressed GLB:", r.stderr.strip()[:300])
+                return raw
+            with open(b, "rb") as fh:
+                return fh.read()
+
+    def _plain_bytes(self) -> bytes:
         g = dict(self.g)
         g["buffers"] = [{"byteLength": len(self.bin)}]
         if self._ext:
