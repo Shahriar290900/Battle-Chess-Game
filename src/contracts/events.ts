@@ -21,6 +21,15 @@ export interface GameEvents {
   'ui:click': Record<string, never>;
   'ai:thinking': { side: Side; thinking: boolean };
   'settings:changed': { key: string };
+  /** Weapons meeting at impact (blocked/parried strike) — audio. */
+  'clash': { attackerFaction: Faction; defenderFaction: Faction; heavy: boolean };
+  /** A weapon hits the ground (checkmate surrender, or dropped in a fight). */
+  'weapon:drop': { faction: Faction; role: Role };
+  /** Physics contact of debris (rate-limited by fx), strength 0–1. */
+  'debris:impact': { faction: Faction; strength: number };
+  'taunt': { faction: Faction; role: Role };
+  'surrender': { side: Side };
+  'loading:progress': { loaded: number; total: number; stage: string };
 }
 
 export type GameModeKind = 'vs-ai' | 'hotseat';

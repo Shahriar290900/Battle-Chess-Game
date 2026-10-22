@@ -17,8 +17,13 @@ export const fragmentsUrl = (id: AssetId) => `models/${id}_fragments.glb`;
 
 /** Required clips (validator-enforced). */
 export const CLIPS = ['Idle', 'Move', 'Attack', 'HitReact', 'Victory'] as const;
-/** Optional clips (contract v1.1). Taunt: provoke gesture toward the enemy king while giving check (1–1.6 s, once). */
-export const OPTIONAL_CLIPS = ['Taunt'] as const;
+/** Optional clips (contract v1.1).
+ *  Taunt: provoke gesture toward the enemy king while giving check (1–1.6 s, once).
+ *  Surrender: checkmate. King: falls to his knees, head bowed, weapon laid down. Others: drop their weapon
+ *  (weapon parts bound to optional bone `weapon`, which falls and bounces to the pedestal), hands lowered. 1.5–2.5 s, once, holds last pose. */
+export const OPTIONAL_CLIPS = ['Taunt', 'Surrender'] as const;
+/** Optional bone carrying the held weapon so Surrender can drop it. */
+export const WEAPON_BONE = 'weapon';
 export type ClipName = (typeof CLIPS)[number] | (typeof OPTIONAL_CLIPS)[number];
 export const LOOPING_CLIPS: readonly ClipName[] = ['Idle', 'Move'];
 

@@ -31,12 +31,14 @@ export interface GraphicsSettings {
   /** Kinematics layer: spring bones, look-at, lean, knockback wobble. */
   secondaryMotion: boolean;
   showFps: boolean;
+  /** Frame cap: 30, 60, or 0 = unlimited (vsync). */
+  fpsCap: 30 | 60 | 0;
 }
 
 export const GRAPHICS_PRESETS: Record<QualityTier, GraphicsSettings> = {
-  high: { preset: 'high', resolutionScale: 1, shadows: 'high', bloom: true, antialias: true, particles: 'high', physics: 'full', ambient: true, secondaryMotion: true, showFps: false },
-  medium: { preset: 'medium', resolutionScale: 1, shadows: 'low', bloom: true, antialias: false, particles: 'medium', physics: 'full', ambient: true, secondaryMotion: true, showFps: false },
-  low: { preset: 'low', resolutionScale: 0.75, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false },
+  high: { preset: 'high', resolutionScale: 1, shadows: 'high', bloom: true, antialias: true, particles: 'high', physics: 'full', ambient: true, secondaryMotion: true, showFps: false, fpsCap: 0 },
+  medium: { preset: 'medium', resolutionScale: 1, shadows: 'low', bloom: true, antialias: false, particles: 'medium', physics: 'full', ambient: true, secondaryMotion: true, showFps: false, fpsCap: 60 },
+  low: { preset: 'low', resolutionScale: 0.75, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false, fpsCap: 30 },
 };
 
 export interface Settings {
@@ -55,12 +57,14 @@ export interface Settings {
   aiLevel: AiLevel;
   /** Human side in vs-AI mode. */
   playerSide: Side;
+  /** First-launch tutorial already offered/completed. */
+  tutorialSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   cameraMode: 'follow', captureMode: 'full', animSpeed: 1, quality: 'auto', graphics: { ...GRAPHICS_PRESETS.medium },
   musicEnabled: true, musicVolume: 0.55, sfxVolume: 0.8, colorBlind: false,
-  showMoveList: true, aiLevel: 'medium', playerSide: 'w',
+  showMoveList: true, aiLevel: 'medium', playerSide: 'w', tutorialSeen: false,
 };
 
 export interface SettingsStore {
@@ -275,6 +279,8 @@ export interface SequencePlayer {
   promote(ctx: SequenceContext, role: PromotionRole): Promise<void>;
   /** Check: the checking piece (ctx.move.to) provokes the king (Taunt clip or procedural taunt) + aura. */
   check(ctx: SequenceContext, kingSquare: Square): Promise<void>;
+  /** Checkmate: mated king plays Surrender (kneels), every other piece of the losing side plays Surrender (drops weapon);
+   *  winners Victory. Emits 'surrender' + 'weapon:drop' events. */
   checkmate(ctx: SequenceContext, kingSquare: Square): Promise<void>;
   stalemate(ctx: SequenceContext): Promise<void>;
   /** Finish the running sequence immediately (tl.progress(1), snap transforms). */
@@ -285,7 +291,9 @@ export interface SequencePlayer {
 // ---------------------------------------------------------------- audio
 export type SfxName =
   | `move:step:${Faction}` | `attack:whoosh:${Role}` | `impact:${Faction}` | `shatter:${Faction}`
-  | `summon:${Faction}` | `spell:${Faction}` | 'check' | 'mate' | 'ui:click' | 'ui:select' | 'castle' | 'promote';
+  | `summon:${Faction}` | `spell:${Faction}` | 'check' | 'mate' | 'ui:click' | 'ui:select' | 'castle' | 'promote'
+  | `clash:${Faction}` | `drop:${Faction}` | `debris:${Faction}` | `taunt:${Faction}` | 'kneel'
+  | 'ui:book' | 'ui:page' | 'ui:knob' | 'ui:switch' | 'ui:button' | 'loading:done';
 
 export interface AudioBus {
   /** Must be called from a user gesture (autoplay policy). */
