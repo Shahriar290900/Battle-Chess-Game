@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FX Sandbox</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07090c; color: #dfe7ee; font: 12px/1.3 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #ui { position: fixed; left: 8px; top: 8px; max-width: 330px; display: flex; flex-wrap: wrap; gap: 4px; background: rgba(8,10,14,.72); padding: 8px; border-radius: 8px; z-index: 2; }
+  #ui button, #ui select { background: #1b232d; color: #dfe7ee; border: 1px solid #34414f; border-radius: 4px; padding: 4px 7px; font: inherit; cursor: pointer; }
+  #ui button:hover { background: #26323f; }
+  #ui .grp { width: 100%; opacity: .6; margin-top: 4px; }
+  #fps { position: fixed; right: 10px; top: 8px; z-index: 2; background: rgba(8,10,14,.72); padding: 4px 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="ui"></div>
+<div id="fps">-- fps</div>
+<script type="module" src="./fx.ts"></script>
+</body>
+</html>
