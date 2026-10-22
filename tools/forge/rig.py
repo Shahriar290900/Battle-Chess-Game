@@ -39,6 +39,7 @@ class Rig:
     def __init__(self):
         self.bones: dict[str, Bone] = {}
         self.sockets: dict[str, tuple[str, np.ndarray]] = {}
+        self.nodes: dict[str, tuple[str, np.ndarray]] = {}    # non-skinned mesh nodes (e.g. weapon_summon): name -> (parent bone, abs pos)
 
     def add(self, name, parent, pos):
         assert parent is None or parent in self.bones, f"parent {parent!r} must be added before {name!r}"
@@ -48,6 +49,12 @@ class Rig:
     def socket(self, name, bone, pos):
         assert bone in self.bones
         self.sockets[name] = (bone, np.asarray(pos, dtype=np.float64))
+
+    def node(self, name, bone, pos):
+        """A non-skinned, animatable node (e.g. the queen's `weapon_summon`) parented to `bone`, origin at `pos`.
+        Parts added with `Piece.add(..., bone=name)` are written as a separate unskinned mesh under it."""
+        assert bone in self.bones
+        self.nodes[name] = (bone, np.asarray(pos, dtype=np.float64))
 
     @property
     def order(self):

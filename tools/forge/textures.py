@@ -392,36 +392,45 @@ def gen_skin(n, seed):
 
 # ---------------------------------------------------------------- Rime Host
 def gen_obsidian(n, seed):
-    v = voronoi(n, 7, seed, jitter=1.0)
+    """Volcanic glass: a few broad conchoidal facets (planar tilt per Voronoi cell + one soft shell ridge), a faint blue sheen
+    and sparse hairline scratches.  No fine grain: glass is smooth, the facets carry the highlights."""
+    v = voronoi(n, 4, seed, jitter=1.0)
     rng = v["rng"]
-    sl = (rng.random((v["n_sites"], 2)) - 0.5) * 0.9
+    sl = (rng.random((v["n_sites"], 2)) - 0.5) * 1.0
     fac = sl[v["id"], 0] * v["dx"] + sl[v["id"], 1] * v["dy"]
-    ripple = np.sin(v["f1"] * 2 * math.pi * 3.2 + rng.random(v["n_sites"])[v["id"]] * 6) * np.exp(-v["f1"] * 0.6)
+    shell = np.sin(v["f1"] * 2 * math.pi * 1.1 + rng.random(v["n_sites"])[v["id"]] * 6) * np.exp(-v["f1"] * 1.6)
     fine = fft_noise(n, 1.4, seed + 1, 20, 160)
-    scr = smooth(0.66, 0.74, fft_noise(n, 1.0, seed + 2, 2, 140, aniso=(0.04, 1.0)))
-    h = norm01(0.55 * fac + 0.25 * ripple + 0.08 * fine)
-    low = fft_noise(n, 2.4, seed + 3, 1, 6)
-    alb = hexcol(0x1C2430)[None, None] * (0.55 + 0.9 * low[..., None]) * (0.8 + 0.4 * h[..., None])
-    alb = mix(alb, hexcol(0x4C6078), scr * 0.5)
-    rough = np.clip(0.10 + 0.1 * fine + 0.35 * scr, 0.05, 0.6)
-    ao = np.clip(0.8 + 0.2 * h, 0, 1)
-    return _ts("RH_Obsidian", albedo=alb, rough=rough, metal=np.full((n, n), 0.2), ao=ao, height=h, normal_strength=7.0,
+    scr = smooth(0.84, 0.88, fft_noise(n, 1.0, seed + 2, 2, 140, aniso=(0.04, 1.0)))
+    scr2 = smooth(0.85, 0.89, fft_noise(n, 1.0, seed + 5, 2, 140, aniso=(1.0, 0.05)))
+    h = norm01(0.7 * fac + 0.12 * shell + 0.02 * fine)
+    low = fft_noise(n, 2.6, seed + 3, 1, 5)
+    sheen = smooth(0.58, 0.85, fft_noise(n, 2.2, seed + 4, 1, 7))
+    alb = hexcol(0x151C28)[None, None] * (0.7 + 0.7 * low[..., None]) * (0.85 + 0.3 * h[..., None])
+    alb = mix(alb, hexcol(0x2C4560), sheen * 0.45)
+    alb = mix(alb, hexcol(0x6F8CAA), np.clip(scr + scr2, 0, 1) * 0.35)
+    rough = np.clip(0.30 + 0.05 * fine + 0.12 * sheen + 0.3 * (scr + scr2), 0.15, 0.7)
+    ao = np.clip(0.85 + 0.15 * h, 0, 1)
+    return _ts("RH_Obsidian", albedo=alb, rough=rough, metal=np.full((n, n), 0.2), ao=ao, height=h, normal_strength=1.8,
                tile=0.35, wear=0.8, wear_boost=1.0, grime=(0.01, 0.015, 0.025), baked_tone=0.9, ao_strength=0.85)
 
 
 def gen_ice(n, seed):
+    """Glacial ice: deep blue pockets, pale frost veins on the fracture planes, bright hairline cracks that also glow
+    faintly (emissive) so the interior reads translucent; glassy (very low roughness) except in frosted patches."""
     crack, edge, v = _crack_mask(n, seed, 5, 0.04, 0.09)
     crack2, _, _ = _crack_mask(n, seed + 31, 9, 0.025, 0.12)
     facet = voronoi(n, 5, seed + 32, jitter=1.0)
     fac = ((facet["rng"].random((facet["n_sites"], 2)) - 0.5) * 0.5)
-    h = norm01(fac[facet["id"], 0] * facet["dx"] + fac[facet["id"], 1] * facet["dy"] + 0.15 * fft_noise(n, 2.0, seed + 33, 2, 40))
-    frost = smooth(0.58, 0.8, fft_noise(n, 2.2, seed + 34, 2, 20))
-    alb = mix(hexcol(0xB8E6FA)[None, None] * np.ones((n, n, 1)), hexcol(0xE6F6FF), frost * 0.7 + crack * 0.4)
+    h = norm01(fac[facet["id"], 0] * facet["dx"] + fac[facet["id"], 1] * facet["dy"] + 0.1 * fft_noise(n, 2.0, seed + 33, 2, 40))
+    frost = smooth(0.62, 0.82, fft_noise(n, 2.2, seed + 34, 2, 20))
+    depth = smooth(0.30, 0.70, fft_noise(n, 2.6, seed + 35, 1, 5))
+    alb = mix(hexcol(0x3E93C4)[None, None] * np.ones((n, n, 1)), hexcol(0x9FD8F2), depth * 0.85)
+    alb = mix(alb, hexcol(0xDDF3FF), np.clip(frost * 0.55 + crack * 0.55 + crack2 * 0.25, 0, 1))
     emi = np.stack([0.18 * np.ones((n, n)), 0.85 * np.ones((n, n)), 1.0 * np.ones((n, n))], -1) * (np.clip(crack * 0.9 + crack2 * 0.35, 0, 1))[..., None] * 0.55
-    rough = np.clip(0.07 + 0.5 * frost + 0.1 * crack, 0.03, 0.8)
+    rough = np.clip(0.05 + 0.5 * frost + 0.1 * crack, 0.03, 0.8)
     return _ts("RH_Ice", albedo=alb, rough=rough, metal=np.zeros((n, n)), ao=np.ones((n, n)), height=h, normal_strength=4.0, tile=0.4,
-               emissive=emi, emissive_strength=1.5, transmission=0.9, ior=1.31, thickness=0.05, attenuation_color=(0.45, 0.8, 1.0),
-               attenuation_distance=0.35, wear=0.0, ao_strength=0.4, grime=(0.3, 0.45, 0.55), baked_tone=1.0, double_sided=False)
+               emissive=emi, emissive_strength=1.5, transmission=0.9, ior=1.31, thickness=0.05, attenuation_color=(0.35, 0.75, 1.0),
+               attenuation_distance=0.25, wear=0.0, ao_strength=0.4, grime=(0.18, 0.38, 0.55), baked_tone=1.0, double_sided=False)
 
 
 def gen_frost(n, seed):
@@ -472,6 +481,87 @@ for _n, _f, _s in [("EH_Bronze", gen_bronze, 11), ("EH_Steel", gen_steel, 12), (
                    ("RH_Obsidian", gen_obsidian, 21), ("RH_Ice", gen_ice, 22), ("RH_Frost", gen_frost, 23),
                    ("RH_Silver", gen_silver, 24), ("RH_Glow", gen_glow, 25), ("RH_Interior", gen_rh_interior, 26)]:
     register(MaterialDef(_n, _f, _s))
+
+
+# ---- Rime Host extras (secondary materials named in the art sheets): armour blue plate, frost-stiff cloth, dead flesh / bone
+def gen_rh_armour(n, seed):
+    v = voronoi(n, 5, seed, jitter=1.0)
+    rng = v["rng"]
+    sl = (rng.random((v["n_sites"], 2)) - 0.5) * 0.7
+    fac = sl[v["id"], 0] * v["dx"] + sl[v["id"], 1] * v["dy"]
+    fine = fft_noise(n, 1.4, seed + 1, 20, 160)
+    scr = smooth(0.68, 0.76, fft_noise(n, 1.0, seed + 2, 2, 140, aniso=(1.0, 0.05)))
+    low = fft_noise(n, 2.4, seed + 3, 1, 6)
+    h = norm01(0.5 * fac + 0.04 * fine)
+    alb = hexcol(0x24384F)[None, None] * (0.6 + 0.8 * low[..., None]) * (0.8 + 0.4 * h[..., None])
+    alb = mix(alb, hexcol(0x6F8BA8), scr * 0.45)
+    rough = np.clip(0.26 + 0.15 * fine + 0.3 * scr, 0.1, 0.7)
+    return _ts("RH_Armour", albedo=alb, rough=rough, metal=np.full((n, n), 0.25), ao=np.clip(0.8 + 0.2 * h, 0, 1), height=h,
+               normal_strength=3.5, tile=0.3, wear=0.7, grime=(0.012, 0.02, 0.035), baked_tone=0.9, ao_strength=0.85)
+
+
+def gen_rh_cloth(n, seed):
+    N = 32
+    x = (np.arange(n) + 0.5) / n
+    X, Y = np.meshgrid(x, x)
+    a = 0.5 + 0.5 * np.sin(2 * math.pi * N * X)
+    b = 0.5 + 0.5 * np.sin(2 * math.pi * N * Y)
+    parity = (np.floor(X * N) + np.floor(Y * N)) % 2
+    thread = np.where(parity > 0.5, a, b)
+    slub = fft_noise(n, 1.0, seed, 20, 150, aniso=(1.0, 0.1))
+    low = fft_noise(n, 2.4, seed + 2, 1, 6)
+    frost = smooth(0.62, 0.82, fft_noise(n, 2.6, seed + 3, 1, 12))      # stiff frozen patches
+    speck = smooth(0.78, 0.9, fft_noise(n, 0.8, seed + 4, 60, 200))
+    h = norm01(0.08 * thread + 0.4 * slub + 0.25 * frost + 0.25 * fft_noise(n, 1.6, seed + 6, 6, 60))
+    alb = hexcol(0x1B2A3E)[None, None] * (0.75 + 0.3 * h[..., None]) * (0.7 + 0.5 * low[..., None])
+    alb = mix(alb, hexcol(0x8EA9BE), np.clip(frost * 0.5 + speck * 0.35, 0, 1))
+    rough = np.clip(0.85 + 0.1 * (1 - h) - 0.25 * speck, 0.4, 1)
+    return _ts("RH_Cloth", albedo=alb, rough=rough, metal=np.zeros((n, n)), ao=np.clip(0.55 + 0.45 * h, 0, 1), height=h,
+               normal_strength=2.2, tile=0.2, wear=0.0, grime=(0.01, 0.018, 0.03), baked_tone=1.0, ao_strength=1.0, double_sided=True)
+
+
+def gen_rh_bone(n, seed):
+    pores = voronoi(n, 80, seed, jitter=1.0)
+    low = fft_noise(n, 2.4, seed + 1, 1, 6)
+    fine = fft_noise(n, 1.2, seed + 2, 30, 200)
+    vein = 1 - smooth(0.0, 0.06, np.abs(fft_noise(n, 2.0, seed + 3, 2, 16) - 0.5))
+    h = norm01(0.3 * low + 0.2 * fine - 0.3 * np.clip(pores["f1"] / 0.5, 0, 1))
+    alb = hexcol(0x4E5A66)[None, None] * (0.78 + 0.35 * low[..., None]) * (1 - 0.2 * vein[..., None])
+    alb = mix(alb, hexcol(0x4F6C86), vein * 0.5)
+    return _ts("RH_Bone", albedo=alb, rough=np.clip(0.55 + 0.15 * fine, 0.3, 0.9), metal=np.zeros((n, n)),
+               ao=np.clip(0.8 + 0.2 * h, 0, 1), height=h, normal_strength=3.0, tile=0.2, wear=0.0,
+               grime=(0.03, 0.05, 0.08), baked_tone=1.0, ao_strength=0.9)
+
+
+for _n, _f, _s in [("RH_Armour", gen_rh_armour, 28), ("RH_Cloth", gen_rh_cloth, 29), ("RH_Bone", gen_rh_bone, 30)]:
+    register(MaterialDef(_n, _f, _s))
+
+
+def gen_rh_seam(n, seed):
+    """Faint cold seam light (pedestal grooves, plate cracks): dim cyan emissive, not a neon tube."""
+    v1 = fft_noise(n, 2.2, seed, 2, 14)
+    heat = np.clip(0.35 + 0.65 * v1, 0, 1)
+    emi = np.stack([0.2 + 0.4 * heat, 0.7 + 0.3 * heat, np.ones_like(heat)], -1) * (0.35 + 0.65 * heat)[..., None]
+    return _ts("RH_Seam", albedo=np.full((n, n, 3), 0.04), rough=np.full((n, n), 0.5), metal=np.zeros((n, n)), ao=np.ones((n, n)),
+               height=norm01(heat), normal_strength=1.5, tile=0.2, emissive=emi, emissive_strength=0.9, ao_strength=0.0)
+
+
+register(MaterialDef("RH_Seam", gen_rh_seam, 31))
+
+
+def gen_rh_basalt(n, seed):
+    """Obsidian's matte cousin for big flat pedestal surfaces: same facets and colour, rough enough that grazing rim light
+    does not glare the whole top plate white."""
+    ts = gen_obsidian(n, seed)
+    ts.name = "RH_Basalt"
+    ts.rough = np.clip(ts.rough * 0.4 + 0.52, 0.5, 0.85)
+    ts.metal = np.zeros((n, n))
+    ts.albedo = ts.albedo * 0.55
+    ts.normal_strength = 2.6
+    return ts
+
+
+register(MaterialDef("RH_Basalt", gen_rh_basalt, 21))
 
 
 @lru_cache(maxsize=64)

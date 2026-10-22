@@ -75,7 +75,7 @@ class Piece:
             bake=True, occluder=True, frag=True, uv_scale=None, tint=None):
         """Add a part.  `blend=(v0, v1)` with `bone2` smoothly shifts weight from `bone` (at coordinate v0 along
         `axis`) to `bone2` (at v1) - use for cloaks, skirts, fur.  Otherwise the part is rigidly bound to `bone`."""
-        assert bone in self.rig.bones, f"unknown bone {bone}"
+        assert bone in self.rig.bones or bone in self.rig.nodes, f"unknown bone {bone}"
         if mesh is None or mesh.tri_count == 0:
             return
         m = mesh if mesh.N is not None else mesh.shade()
@@ -93,18 +93,31 @@ class Piece:
 
     # ------------------------------------------------------------ build
     def tri_count(self):
-        return sum(p.mesh.tri_count for p in self.parts)
+        """Skinned LOD0 triangles (parts on unskinned rig nodes are counted by `node_tri_count`)."""
+        return sum(p.mesh.tri_count for p in self.parts if not self._is_node(p))
+
+    def node_tri_count(self):
+        return sum(p.mesh.tri_count for p in self.parts if self._is_node(p))
+
+    def _is_node(self, p):
+        return p.bone in self.rig.nodes
 
     def _bake(self, log):
-        occ = [p for p in self.parts if p.occluder]
+        occ = [p for p in self.parts if p.occluder and not self._is_node(p)]
         meshes = [p.mesh for p in occ]
         mats = [p.material for p in occ]
         cols = T.bake_vertex_colors(meshes, mats, seed=self.seed, tex_res=self.tex_res)
         for p, c in zip(occ, cols):
             p.mesh = p.mesh.copy()
             p.mesh.C = c if p.bake else np.ones((len(p.mesh.P), 4))
+        nodep = [p for p in self.parts if self._is_node(p)]
+        if nodep:   # node parts (summoned weapon) get their own AO pass: they must not darken the body at rest
+            cols = T.bake_vertex_colors([p.mesh for p in nodep], [p.material for p in nodep], seed=self.seed + 7, tex_res=self.tex_res)
+            for p, c in zip(nodep, cols):
+                p.mesh = p.mesh.copy()
+                p.mesh.C = c if p.bake else np.ones((len(p.mesh.P), 4))
         for p in self.parts:
-            if not p.occluder:
+            if not p.occluder and not self._is_node(p):
                 p.mesh = p.mesh.copy()
                 p.mesh.C = np.ones((len(p.mesh.P), 4))
             if p.tint is not None:
@@ -137,8 +150,13 @@ class Piece:
 
     def build(self, log=print):
         self._bake(log)
-        lod1_parts = self._lod1(LOD1_BUDGET[self.role], log)
-        piece_bytes, sizes = self._write_piece(lod1_parts)
+        node_parts = [p for p in self.parts if self._is_node(p)]
+        self.parts = [p for p in self.parts if not self._is_node(p)]
+        try:
+            lod1_parts = self._lod1(LOD1_BUDGET[self.role], log)
+        finally:
+            self.parts = self.parts + node_parts
+        piece_bytes, sizes = self._write_piece(lod1_parts, node_parts)
         frag_src = [(m, p.material) for p, m in lod1_parts if p.frag]
         frags = build_fragments(frag_src, FRAG_COUNT[self.role], f"{self.prefix}_Interior", budget=FRAG_BUDGET - 200,
                                 seed=self.seed)
@@ -194,7 +212,7 @@ class Piece:
                                    np.concatenate(Ws)))
         return prims
 
-    def _write_piece(self, lod1_parts):
+    def _write_piece(self, lod1_parts, node_parts=()):
         g = GlbBuilder()
         cache: dict = {}
         rig = self.rig
@@ -209,8 +227,24 @@ class Piece:
             ibm[i] = np.eye(4)
             ibm[i][:3, 3] = -rig.pos(name)
         skin = g.skin([node_of[n] for n in rig.order], ibm, skeleton=node_of["root"])
+        for nname, (nbone, npos) in rig.nodes.items():     # unskinned mesh nodes (queen weapon_summon), animated by scale
+            items = [p for p in node_parts if p.bone == nname]
+            prims = []
+            by_mat: dict = {}
+            for p in items:
+                by_mat.setdefault(p.material, []).append(p.mesh.translated(*(-npos)))
+            for mat, ms in by_mat.items():
+                ms = [m.compact() if m.N is not None else m.shade() for m in ms]
+                prims.append(Primitive(np.concatenate([m.P for m in ms]), np.concatenate([m.N for m in ms]),
+                                       np.concatenate([m.UV for m in ms]),
+                                       np.concatenate([m.F + o for m, o in zip(ms, np.cumsum([0] + [len(m.P) for m in ms[:-1]]))]),
+                                       self._mat_index(g, cache, mat),
+                                       np.concatenate([m.C if m.C is not None else np.ones((len(m.P), 4)) for m in ms])))
+            nn = g.node(nname, translation=npos - rig.pos(nbone), mesh=g.mesh(nname, prims) if prims else None, scale=(0, 0, 0))   # rest scale 0: hidden unless a clip scales it up
+            g.add_child(node_of[nbone], nn)
+            node_of[nname] = nn
         lod0 = g.node(f"{self.asset_id}_LOD0", mesh=g.mesh(f"{self.asset_id}_LOD0",
-                      self._prims(g, [(p, p.mesh) for p in self.parts], cache)), skin=skin)
+                      self._prims(g, [(p, p.mesh) for p in self.parts if not self._is_node(p)], cache)), skin=skin)
         lod1 = g.node(f"{self.asset_id}_LOD1", mesh=g.mesh(f"{self.asset_id}_LOD1",
                       self._prims(g, lod1_parts, cache)), skin=skin)
         rig_node = g.node("rig", children=[node_of["root"]])
