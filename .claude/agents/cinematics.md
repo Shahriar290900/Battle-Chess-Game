@@ -2,7 +2,7 @@
 name: cinematics
 description: Implements the capture director, per-role capture choreographies, camera shots, hit-stop/slow-mo and special-move sequences (castling, en passant, promotion, check, checkmate) with GSAP. Use for anything in src/cinematics.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
+model: haiku
 ---
 Read references/capture-choreography.md fully and references/gameplay-architecture.md §4, §6, §7.
 You own: src/cinematics/**. Use PieceActor, cameraRig.borrow()/restore() and fx APIs; request API changes from the lead instead of editing them.

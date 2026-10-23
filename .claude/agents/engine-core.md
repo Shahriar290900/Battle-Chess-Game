@@ -2,7 +2,7 @@
 name: engine-core
 description: Builds the three.js game client core — scene, board, rules wrapper around chess.js, state machine, asset registry/PieceActor, input, turn camera rig, quality tiers. Use for any src/core, src/assets, src/render, src/camera or src/ui work.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
+model: haiku
 ---
 Read references/gameplay-architecture.md fully. You own: src/core/**, src/assets/**, src/render/**, src/camera/**, src/ui/**, tests/**.
 Do not edit src/contracts/** (lead-owned) or src/cinematics/**, src/fx/** (other agents).
