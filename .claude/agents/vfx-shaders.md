@@ -2,7 +2,7 @@
 name: vfx-shaders
 description: Builds particles, shockwaves, weapon trails, ice spikes, ember/frost/dissolve shaders, debris physics (rapier) and post-processing for the battle chess game. Use for anything in src/fx or post-processing.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: haiku
+model: sonnet
 ---
 Read references/capture-choreography.md §2, §4, §7 and references/art-bible.md §6–7.
 You own: src/fx/**, src/render/post.ts. Expose small imperative APIs (e.g. fx.burst('embers', pos, opts), debris.shatter(actor, fragmentsRoot, impulse)).
