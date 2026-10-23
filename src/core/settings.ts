@@ -11,9 +11,10 @@ const ENUMS: Partial<Record<keyof Settings, readonly unknown[]>> = {
   quality: ['auto', 'high', 'medium', 'low'],
   aiLevel: ['easy', 'medium', 'hard', 'master'],
   playerSide: ['w', 'b'],
+  highlightStyle: ['glow', 'brackets', 'tint', 'runes'],
 };
 const RANGES: Partial<Record<keyof Settings, [number, number]>> = {
-  animSpeed: [0.5, 2], musicVolume: [0, 1], sfxVolume: [0, 1],
+  animSpeed: [0.5, 2], musicVolume: [0, 1], sfxVolume: [0, 1], highlightIntensity: [0.2, 1],
 };
 
 const G_ENUMS = {

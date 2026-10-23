@@ -18,6 +18,7 @@ export interface BoardInput {
 
 const LIFT = 0.12;
 const DRAG_PX = 9;
+const DRAG_PX_TOUCH = 16; // fingers wobble: a tap must never turn into a drag
 
 export function createBoardInput(d: {
   canvas: HTMLElement;
@@ -46,11 +47,29 @@ export function createBoardInput(d: {
     ray.setFromCamera(ndc, rig.camera);
   }
 
+  /** Which square (and piece) did the pointer mean? Tiles come first, so clicking anywhere on a square selects the
+   *  piece standing on it. A piece collider only wins when the ray enters it above its OWN square (a body in front
+   *  of a farther tile); a collider spilling over a neighbouring square is ignored. A legal destination always wins
+   *  over a piece that merely occludes it. */
   function squareAt(e: PointerEvent, ignore?: PieceActorImpl): { sq: Square | null; actor: PieceActorImpl | null } {
     aim(e);
-    const actor = board.pickActor(ray, ignore);
-    if (actor) return { sq: actor.square, actor };
-    return { sq: board.pickSquare(ray), actor: null };
+    const tileSq = board.pickSquare(ray);
+    let bodySq: Square | null = null;
+    let bodyActor: PieceActorImpl | null = null;
+    const actors = board.allActors().filter((a) => a !== ignore);
+    const hits = ray.intersectObjects(actors.map((a) => a.collider), false);
+    if (hits.length) {
+      const hitObj = hits[0].object;
+      const a = actors.find((x) => x.collider === hitObj) ?? null;
+      if (a) {
+        const own = worldToSquare(hits[0].point);
+        if (own === a.square || !tileSq) { bodyActor = a; bodySq = a.square; }
+      }
+    }
+    if (selected && tileSq && legal.some((m) => m.to === tileSq)) return { sq: tileSq, actor: board.actorAt(tileSq) ?? null };
+    if (bodyActor && bodySq) return { sq: bodySq, actor: bodyActor };
+    if (tileSq) return { sq: tileSq, actor: board.actorAt(tileSq) ?? null };
+    return { sq: null, actor: null };
   }
 
   function lower(actor: PieceActorImpl, animate: boolean): void {
@@ -134,7 +153,7 @@ export function createBoardInput(d: {
       }
       return;
     }
-    if (!down.drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_PX) {
+    if (!down.drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > (e.pointerType === 'mouse' ? DRAG_PX : DRAG_PX_TOUCH)) {
       down.drag = true;
       if (selected !== down.actor) select(down.actor);
     }

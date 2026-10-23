@@ -1,4 +1,4 @@
-// Tiny DOM helpers + inline SVG icons (no web fonts, no image files: the APK must work offline).
+// Tiny DOM helpers + inline SVG icons (no image files: the APK must work offline; fonts are bundled in public/fonts).
 import type { Faction, Role } from '../contracts';
 
 type Child = Node | string | number | null | undefined | false;
@@ -42,20 +42,44 @@ export function svg(path: string, cls = 'ic', viewBox = '0 0 24 24'): SVGSVGElem
   return s;
 }
 
-/** UI glyph paths (24x24, filled). */
+/** UI glyph paths (24x24, stroked line icons; see .ic in theme.css). */
 export const ICON = {
-  menu: 'M4 6.5h16v2H4zm0 4.5h16v2H4zm0 4.5h16v2H4z',
-  undo: 'M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62A7.96 7.96 0 0 1 12.5 10c3.54 0 6.55 2.31 7.6 5.5l2.37-.78A10.5 10.5 0 0 0 12.5 8z',
-  gear: 'M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z',
-  skip: 'M5 5l9 7-9 7zm10 0h3v14h-3z',
-  list: 'M4 5h2v2H4zm4 0h12v2H8zM4 11h2v2H4zm4 0h12v2H8zM4 17h2v2H4zm4 0h12v2H8z',
-  flag: 'M6 3h2v18H6zm3 1h10l-2.5 4L19 12H9z',
-  close: 'M6.4 5l5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z',
-  note: 'M9 3v10.6A3.5 3.5 0 1 0 11 17V8h6V3z',
-  noteOff: 'M9 3v10.6A3.5 3.5 0 1 0 11 17V8h6V3zM3 4l1.4-1.4L21 19.2 19.6 20.6z',
-  chevron: 'M8 5l8 7-8 7z',
-  swords: 'M4 4l6 1 8 8-1.5 1.5-1.5-1.5L13 16l2 2-1.5 1.5L10 16l-3.5 3.5L5 18l3.5-3.5L5 11zM20 4l-1 6-3 3-1.5-1.5L17 8z',
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  undo: 'M9 14L4 9l5-5M4 9h9a6 6 0 0 1 0 12h-3',
+  gear: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8',
+  skip: 'M5 5l8 7-8 7zM17 5v14',
+  list: 'M5 4h14v16H5zM8 9h8M8 13h8M8 17h5',
+  flag: 'M6 21V4M6 5h11l-2 4 2 4H6',
+  close: 'M6 6l12 12M18 6L6 18',
+  note: 'M9 18V5l10-2v13M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM19 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z',
+  chevL: 'M15 5l-7 7 7 7',
+  chevR: 'M9 5l7 7-7 7',
+  chev2L: 'M12 5l-7 7 7 7M19 5l-7 7 7 7',
+  chev2R: 'M12 5l7 7-7 7M5 5l7 7-7 7',
+  rotate: 'M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5',
+  board: 'M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16',
+  back: 'M10 6l-6 6 6 6M4 12h16',
 } as const;
+
+const CREST_SHIELD = 'M12 2.5l8 2.6v6.4c0 4.700-3.300 8-8 10-4.700-2-8-5.300-8-10V5.100z';
+const CREST_MARK = {
+  emberhold: 'M12 6.500c.9 2.400 3.400 3.800 3.400 6.600a3.400 3.400 0 0 1-6.800 0c0-1.500.7-2.300 1.400-3 .2 1 .8 1.400 1.300 1.500-.3-2 .1-3.800.7-5.100z',
+  rime: 'M12 6.500v11M7.300 9.200l9.400 5.600M16.700 9.200l-9.400 5.600',
+} as const;
+
+/** Heraldic crest: a shield with the faction's mark (flame / ice crystal). */
+export function crest(faction: Faction, cls = ''): SVGSVGElement {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('class', `ic crest ${faction} ${cls}`.trim());
+  s.setAttribute('aria-hidden', 'true');
+  for (const d of [CREST_SHIELD, CREST_MARK[faction]]) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    s.appendChild(p);
+  }
+  return s;
+}
 
 /** Chess silhouettes (24x24). Styled by faction in CSS. */
 const PIECE_PATH: Record<Role, string> = {

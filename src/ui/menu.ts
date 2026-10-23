@@ -1,155 +1,99 @@
-// Main menu: a carved wooden bookshelf. Each option is a leather-bound book with a gilt spine title; books lean on
-// hover and slide out when chosen. "Play vs Computer" opens a second shelf (side + difficulty books, wax-seal Begin).
-import type { AiLevel, GameModeConfig, SettingsStore, Side } from '../contracts';
+// Main menu (over the live attract-mode board) and the in-game pause overlay.
+import type { SettingsStore } from '../contracts';
 import type { GameController } from '../core/game';
-import { clear, h } from './dom';
-import { createToggle, plaque } from './controls';
-import { LEVEL_LABEL } from './glyphs';
+import { h, clear } from './dom';
+import { button, setLabel } from './controls';
+import type { Screen } from './screen';
+import { isCoarse } from './screen';
 
 export interface MenuHandlers {
-  onStart(config: GameModeConfig): void;
-  onResume(): void;
-  onSettings(): void;
-  onResign(): void;
-  /** Open a Learn area screen (src/learn). Only called when `learnAvailable()`. */
-  onLearn(kind: 'tutorial' | 'howto' | 'library'): void;
+  resume(): void;
+  playAi(): void;
+  twoPlayers(): void;
+  howTo(): void;
+  library(): void;
+  settings(): void;
+  credits(): void;
+  resign(): void;
+  mainMenu(): void;
   learnAvailable(): boolean;
+  beginLesson(): void;
 }
 
-export interface Menu {
-  el: HTMLElement;
-  readonly isOpen: boolean;
-  open(): void;
-  close(): void;
-  /** Android back / Esc: returns true if it consumed the event. */
-  back(): boolean;
-}
+const gameRunning = (c: GameController) => { const s = c.snapshot(); return !!s.mode && s.state !== 'menu' && s.state !== 'boot' && s.state !== 'loading'; };
 
-const CREDITS = [
-  ['Battle Chess', 'Emberhold versus the Rime Host. An original game: no franchise names, crests or sculpts.'],
-  ['Engine', 'Rules by chess.js. The computer opponent is Stockfish (single-thread WebAssembly) in a worker.'],
-  ['Craft', 'three.js and GSAP for the stage and its animation. Every texture, model, sound and this very bookshelf is made in code.'],
-  ['Music', 'Bring your own tape: load a track in Settings. Sound effects are synthesised.'],
-];
-const HOWTO = [
-  ['The field', 'Emberhold (White) moves first. Click a piece, then a glowing square, or drag it there.'],
-  ['The pieces', 'Pawns step forward and strike diagonally. Rooks run straight, bishops slant, knights leap, the queen does both, the king takes one step.'],
-  ['The goal', 'Trap the enemy king so it cannot escape (checkmate). A king with no safe move but no check is a stalemate: a draw.'],
-  ['Special moves', 'Castling, en passant and promotion all work as in standard chess; a pawn reaching the far rank asks what it becomes.'],
-  ['Controls', 'Tap during an animation to skip it. Undo, the move list and Settings are the keys on the chronicle box.'],
-];
-
-function book(label: string, idx: number, onClick: () => void, o: { cls?: string; tall?: number; sub?: string } = {}): HTMLButtonElement {
-  const b = h('button', { class: `book c${idx % 6} ${o.cls ?? ''}`.trim(), type: 'button', style: { '--bi': String(idx % 6), '--bh': `${o.tall ?? 100}%` } },
-    h('span', { class: 'book-band' }), h('span', { class: 'book-title', text: label }), o.sub ? h('span', { class: 'book-sub', text: o.sub }) : null, h('span', { class: 'book-band low' }));
-  b.addEventListener('click', () => {
-    b.classList.add('pulling');
-    window.setTimeout(() => { b.classList.remove('pulling'); onClick(); }, 180);
-  });
+/** A two-step destructive button: first click arms it, a second click within 3 s confirms. No dialogs. */
+function confirmButton(label: string, confirmLabel: string, run: () => void, tip: string): HTMLButtonElement {
+  let timer = 0;
+  const b = button(label, () => {
+    if (b.classList.contains('armed')) { clearTimeout(timer); b.classList.remove('armed'); setLabel(b, label); run(); return; }
+    b.classList.add('armed'); setLabel(b, confirmLabel);
+    timer = window.setTimeout(() => { b.classList.remove('armed'); setLabel(b, label); }, 3000);
+  }, { cls: 'danger', tip });
+  b.addEventListener('blur', () => { clearTimeout(timer); b.classList.remove('armed'); setLabel(b, label); });
   return b;
 }
 
-export function createMenu(controller: GameController, settings: SettingsStore, hd: MenuHandlers): Menu {
-  const shelfMain = h('div', { class: 'shelf shelf-main', role: 'menu' });
-  const shelfSub = h('div', { class: 'shelf shelf-sub', hidden: true });
-  const note = h('div', { class: 'note', hidden: true });
-  const reader = h('div', { class: 'reader', hidden: true });
-  const cabinet = h('div', { class: 'cabinet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Main menu' },
-    h('div', { class: 'cabinet-head' }, h('h1', { class: 'cabinet-title', text: 'Battle Chess' }), h('p', { class: 'cabinet-sub', text: 'Emberhold versus the Rime Host' })),
-    note, shelfMain, shelfSub, reader,
-    h('div', { class: 'cabinet-foot' }, createToggle({ label: 'Music', value: settings.get().musicEnabled, onChange: (v) => settings.set('musicEnabled', v) }).el));
-  const el = h('div', { class: 'overlay menu-overlay', hidden: true }, cabinet);
-  let open = false;
-  let view: 'root' | 'ai' | 'reader' = 'root';
+export function createMainMenu(controller: GameController, settings: SettingsStore, hd: MenuHandlers): Screen {
+  const list = h('div', { class: 'menu-list', role: 'menu' });
+  const note = h('div', { class: 'note fr', hidden: true });
+  const foot = h('div', { class: 'menu-foot' },
+    h('span', {}, h('i', { class: 'kbd', text: 'Up' }), h('i', { class: 'kbd', text: 'Down' }), 'Navigate'),
+    h('span', {}, h('i', { class: 'kbd', text: 'Enter' }), 'Select'), h('span', {}, h('i', { class: 'kbd', text: 'Esc' }), 'Back'));
+  if (isCoarse()) foot.hidden = true;
+  const el = h('div', { class: 'scr menu in', role: 'dialog', 'aria-label': 'Main menu' },
+    h('div', { class: 'col' },
+      h('div', { class: 'logo-block' }, h('h1', { class: 'ttl' }, 'Battle', h('br'), 'Chess'), h('p', { class: 'kick', text: 'Emberhold versus the Rime Host' }), h('div', { class: 'rule' })),
+      list, note), foot);
 
-  function renderMain() {
-    clear(shelfMain);
+  function build() {
+    clear(list);
     const s = controller.snapshot();
-    const running = !!s.mode && s.state !== 'menu' && s.state !== 'boot' && s.state !== 'loading';
-    let i = 0;
-    if (running) shelfMain.append(book(s.result ? 'View Board' : 'Continue', i++, () => { api.close(); hd.onResume(); }, { tall: 100 }));
-    shelfMain.append(
-      book('Play vs Computer', i++, () => show('ai'), { tall: 96 }),
-      book('Two Players', i++, () => { api.close(); hd.onStart({ kind: 'hotseat', playerSide: 'w', aiLevel: settings.get().aiLevel }); }, { tall: 90 }),
-      book('Settings', i++, () => hd.onSettings(), { tall: 84 }),
-      book('How to Play', i++, () => (hd.learnAvailable() ? hd.onLearn('howto') : read('How to Play', HOWTO)), { tall: 92 }),
-    );
-    if (hd.learnAvailable()) shelfMain.append(book('Piece Library', i++, () => hd.onLearn('library'), { tall: 88 }));
-    shelfMain.append(book('Credits', i++, () => read('Credits', CREDITS), { tall: 80 }));
-    if (running && !s.result) shelfMain.append(book('Resign', 4, () => { api.close(); hd.onResign(); }, { cls: 'resign', tall: 76 }));
-    // first-launch prompt
-    const showNote = !settings.get().tutorialSeen && hd.learnAvailable();
+    const running = gameRunning(controller);
+    if (running) list.append(button(s.result ? 'View Board' : 'Continue', hd.resume, { tip: 'Continue|Return to the game in progress.', tipKey: 'Esc' }));
+    list.append(
+      button('Play vs Computer', hd.playAi, { tip: 'Play vs Computer|Face the Stockfish opponent. Choose your host and its strength.' }),
+      button('Two Players', hd.twoPlayers, { tip: 'Two Players|Pass-and-play on one device. The board can turn to face each player.' }),
+      button('How to Play', hd.howTo, { tip: 'How to Play|Short guided lessons on the real board.' }));
+    if (hd.learnAvailable()) list.append(button('Piece Library', hd.library, { tip: 'Piece Library|Turn each piece in 3D and watch how it moves and fights.' }));
+    list.append(
+      button('Settings', hd.settings, { tip: 'Settings|Graphics, audio, gameplay and controls.' }),
+      button('Credits', hd.credits, { tip: 'Credits|Who made this and what it is built with.' }));
+    if (running && !s.result) list.append(confirmButton('Resign', 'Confirm resign', hd.resign, 'Resign|Concede the game. Tap twice to confirm.'));
+    list.firstElementChild?.setAttribute('data-autofocus', '');
+    const showNote = !settings.get().tutorialSeen && hd.learnAvailable() && !running;
     note.hidden = !showNote;
     clear(note);
     if (showNote) {
-      note.append(h('p', { class: 'note-text', text: 'New to the field? A short lesson will teach you the pieces.' }),
-        h('div', { class: 'note-actions' },
-          plaque('Begin lesson', () => { settings.set('tutorialSeen', true); hd.onLearn('tutorial'); }),
-          plaque('Not now', () => { settings.set('tutorialSeen', true); note.hidden = true; }, 'quiet')));
+      note.append(h('p', { text: 'New to the field? A short lesson teaches you the pieces.' }),
+        h('div', { class: 'acts' },
+          button('Start', () => { settings.set('tutorialSeen', true); hd.beginLesson(); }, { cls: 'small' }),
+          button('Later', () => { settings.set('tutorialSeen', true); }, { cls: 'small' })));
     }
   }
-
-  function renderSub() {
-    clear(shelfSub);
-    const st = settings.get();
-    let side: Side = st.playerSide;
-    let level: AiLevel = st.aiLevel;
-    const sideBooks: HTMLElement[] = [];
-    const levelBooks: HTMLElement[] = [];
-    const mark = (list: HTMLElement[], on: HTMLElement) => list.forEach((b) => b.classList.toggle('selected', b === on));
-    const mkSide = (v: Side, label: string, sub: string, idx: number) => {
-      const b = book(label, idx, () => { side = v; mark(sideBooks, b); }, { cls: 'side', tall: 100, sub });
-      b.classList.toggle('selected', v === side);
-      sideBooks.push(b);
-      return b;
-    };
-    shelfSub.append(
-      h('div', { class: 'shelf-label', text: 'Your host' }),
-      h('div', { class: 'row-books' }, mkSide('w', 'Emberhold', 'White', 0), mkSide('b', 'Rime Host', 'Black', 2)),
-      h('div', { class: 'shelf-label', text: 'Difficulty' }),
-      h('div', { class: 'row-books small' }, ...(Object.keys(LEVEL_LABEL) as AiLevel[]).map((l, k) => {
-        const b = book(LEVEL_LABEL[l], k + 1, () => { level = l; mark(levelBooks, b); }, { cls: 'level', tall: 80 + k * 6 });
-        b.classList.toggle('selected', l === level);
-        levelBooks.push(b);
-        return b;
-      })),
-      h('div', { class: 'shelf-actions' },
-        plaque('Back', () => show('root'), 'quiet'),
-        plaque('Begin', () => { settings.set('playerSide', side); settings.set('aiLevel', level); api.close(); hd.onStart({ kind: 'vs-ai', playerSide: side, aiLevel: level }); }, 'seal')),
-    );
-  }
-
-  function read(title: string, pages: string[][]) {
-    clear(reader);
-    reader.append(
-      h('h2', { class: 'reader-title', text: title }),
-      h('div', { class: 'reader-pages' }, ...pages.map(([t, body]) => h('section', { class: 'reader-sec' }, h('h3', { text: t }), h('p', { text: body })))),
-      h('div', { class: 'shelf-actions' }, plaque('Close book', () => show('root'))));
-    show('reader');
-  }
-
-  function show(v: 'root' | 'ai' | 'reader') {
-    view = v;
-    shelfMain.hidden = v !== 'root';
-    shelfSub.hidden = v !== 'ai';
-    reader.hidden = v !== 'reader';
-    cabinet.dataset.view = v;
-    if (v === 'root') renderMain(); else if (v === 'ai') renderSub();
-  }
-
-  const api: Menu = {
+  settings.subscribe((_, k) => { if (k === 'tutorialSeen' && !el.hidden) build(); });
+  return {
     el,
-    get isOpen() { return open; },
-    open() { open = true; el.hidden = false; show('root'); (cabinet.querySelector('.book') as HTMLElement | null)?.focus({ preventScroll: true }); },
-    close() { open = false; el.hidden = true; },
-    back() {
-      if (!open) return false;
-      if (view !== 'root') { show('root'); return true; }
-      const s = controller.snapshot();
-      if (s.mode && s.state !== 'menu') { api.close(); hd.onResume(); return true; }
-      return false;
-    },
+    onShow: build,
+    back() { if (gameRunning(controller)) { hd.resume(); return true; } return false; },
   };
-  settings.subscribe((_, k) => { if (open && view === 'root' && (k === 'tutorialSeen')) renderMain(); });
-  return api;
+}
+
+export function createPause(controller: GameController, hd: MenuHandlers): Screen {
+  const list = h('div', { class: 'menu-list', role: 'menu' });
+  const el = h('div', { class: 'scr pause in', role: 'dialog', 'aria-label': 'Paused' },
+    h('div', { class: 'col fr' },
+      h('div', { class: 'logo-block' }, h('h1', { class: 'ttl', text: 'Paused' }), h('div', { class: 'rule' })), list));
+  function build() {
+    clear(list);
+    const s = controller.snapshot();
+    list.append(
+      button('Resume', hd.resume, { cls: 'sel', tip: 'Resume|Back to the board.', tipKey: 'Esc' }),
+      button('Settings', hd.settings, { tip: 'Settings|Graphics, audio and gameplay options.' }),
+      button('How to Play', hd.howTo, { tip: 'How to Play|A quick refresher on the rules and controls.' }));
+    if (!s.result) list.append(confirmButton('Resign', 'Confirm resign', hd.resign, 'Resign|Concede the game. Press twice to confirm.'));
+    list.append(button('Main Menu', hd.mainMenu, { tip: 'Main Menu|Leave to the title screen. Your game stays available under Continue.' }));
+    list.firstElementChild?.setAttribute('data-autofocus', '');
+  }
+  return { el, onShow: build, back() { hd.resume(); return true; } };
 }

@@ -28,14 +28,18 @@ import { createBoard } from './render/board';
 import { applyGraphics, createFpsOverlay } from './render/graphics';
 import { createLighting, prewarmCinematicLights } from './render/lighting';
 import { createMarkers } from './render/markers';
-import { createGuardedPost } from './render/postGuard';
-import { createQuality } from './render/quality';
-import { PIXEL_RATIO_CAP, createRenderKit } from './render/scene';
+import { createPost, createVignette } from './render/post';
+import { createQuality, createToaster } from './render/quality';
+import { detectDevice } from './render/device';
+import { createPerf } from './render/perf';
+import { PIXEL_RATIO_CAP, createRenderKit, watchViewport } from './render/scene';
 import { createBoardInput } from './ui/boardInput';
 import { createUi } from './ui';
-import { createPromotionPicker } from './ui/panels';
-import { createLoadingScreen } from './ui/screens';
-import { installSkin } from './ui/skin';
+import { createPromotionPicker } from './ui/endgame';
+import { createLoadingScreen } from './ui/loading';
+import { renderKingPortraits, type Portraits } from './ui/portraits';
+import { installTheme } from './ui/theme';
+import './ui/theme.css';
 
 /** Everything a feature module (src/learn, ...) may need. */
 export interface AppServices {
@@ -55,7 +59,7 @@ export interface AppServices {
 }
 
 type LearnKind = 'tutorial' | 'howto' | 'library';
-const learnModules = import.meta.glob('./learn/index.ts', { eager: true }) as Record<string, { createLearn?: (s: AppServices) => { open?(k: LearnKind): void; start?(k: LearnKind): void } | undefined }>;
+const learnModules = import.meta.glob('./learn/index.ts', { eager: true }) as Record<string, { createLearn?: (s: AppServices) => { open?(k: LearnKind): void | Promise<unknown>; start?(k: LearnKind): void | Promise<unknown> } | undefined }>;
 
 /** Weighted loading stages; progress is reported on the bus so any UI can show it. */
 function createLoadTracker(b: EventBus, stages: Array<[name: string, weight: number]>) {
@@ -77,7 +81,7 @@ function createLoadTracker(b: EventBus, stages: Array<[name: string, weight: num
 }
 
 async function boot(): Promise<void> {
-  installSkin();
+  installTheme();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const uiRoot = document.getElementById('ui-root') as HTMLElement;
   const loading = createLoadingScreen();
@@ -91,30 +95,38 @@ async function boot(): Promise<void> {
     const params = new URLSearchParams(location.search);
     const forced = params.get('quality') as QualityTier | null; // ?quality=low|medium|high (tests, software GL)
     const step = (name: string) => console.debug(`[boot] ${name}`);
-    const startTier: QualityTier = forced === 'low' || forced === 'medium' || forced === 'high' ? forced : settings.get().quality !== 'auto' ? (settings.get().quality as QualityTier) : platform.isMobile ? 'low' : 'medium';
+    const device = detectDevice(platform.isMobile);
+    console.debug(`[boot] gpu: ${device.gpu} | mobile=${device.mobile} cores=${device.cores} weak=${device.weak}`);
+    const prefTier = settings.get().quality;
+    const startTier: QualityTier = forced === 'low' || forced === 'medium' || forced === 'high' ? forced : prefTier !== 'auto' ? prefTier : device.guess;
 
     // ---- renderer, camera, lighting, post
     step('renderer');
-    const kit = createRenderKit(canvas);
+    // MSAA only where the scene renders straight to the canvas (Low); composer tiers use their own passes.
+    const kit = createRenderKit(canvas, { antialias: startTier === 'low' });
     kit.setPixelRatioCap(PIXEL_RATIO_CAP[startTier]);
     const rig = createCameraRig(canvas, { aspect: window.innerWidth / window.innerHeight });
-    const lighting = createLighting(kit.scene, kit.renderer);
-    const post = createGuardedPost(kit.renderer, kit.scene, rig.camera, startTier);
+    const lighting = createLighting(kit.scene, kit.renderer, { weak: device.weak });
+    const post = createPost(kit.renderer, kit.scene, rig.camera, startTier);
+    kit.onResize = (w, h) => post.setSize(w, h);
+    const vignette = createVignette(canvas.parentElement ?? document.body, canvas.nextElementSibling);
+    void vignette;
+    const toast = createToaster(document.body);
     const fx = createFx();
     const kinematics = createKinematics();
     // Optional extension (not in KinematicsApi): enables distance/behind-camera culling.
     (kinematics as { setCamera?: (c: typeof rig.camera) => void }).setCamera?.(rig.camera);
     rig.setMode(settings.get().cameraMode);
 
-    const resize = () => {
-      const w = window.innerWidth, h = window.innerHeight;
+    let boardRef: { setGraveyardLayout(l: 'sides' | 'ends'): void } | null = null;
+    // Follows the visual viewport (mobile URL bar), orientation changes and window resizes without a reload.
+    watchViewport((w, h) => {
       kit.setSize(w, h);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       rig.resize(w, h);
-      post.setSize(w, h);
-    };
-    window.addEventListener('resize', resize);
-    window.addEventListener('orientationchange', () => setTimeout(resize, 120));
-    resize();
+      boardRef?.setGraveyardLayout(w / h < 0.95 ? 'ends' : 'sides');
+    });
 
     // ---- platform + audio (unlock on the first gesture, music follows settings)
     const audio = createAudioBus();
@@ -136,22 +148,25 @@ async function boot(): Promise<void> {
     void platform.init().catch((e) => console.warn('[platform] init failed', e));
 
     // ---- game objects (created up front; loading fills them)
-    const registry = createAssetRegistry();
+    const registry = createAssetRegistry({ atlasCell: device.mobile || device.veryWeak ? 128 : 256, anisotropy: device.weak ? 2 : 4 });
     const ai = createAiPlayer();
     const sequences = cinematics.createSequencePlayer();
     const promotion = createPromotionPicker();
-    const tracker = createLoadTracker(bus, [['Forging pieces…', 35], ['Raising the hall…', 25], ['Tempering shaders…', 22], ['Waking the oracle…', 8], ['Tuning the lute…', 10]]);
+    const tracker = createLoadTracker(bus, [['Forging pieces…', 33], ['Raising the hall…', 24], ['Painting portraits…', 4], ['Tempering shaders…', 21], ['Waking the oracle…', 8], ['Tuning the lute…', 10]]);
 
     // ================= real loading work =================
     step('assets');
     await tracker.run(0, async (report) => {
       await registry.preload((n, total) => report(n / total));
     });
-    registry.lod = startTier === 'low' ? 1 : 0;
+    registry.lod = startTier === 'high' ? 0 : 1;
 
     step('board');
-    const board = createBoard({ scene: kit.scene, registry, textureSize: platform.isMobile ? 1024 : 2048, kinematics });
-    const markers = createMarkers(kit.scene);
+    const board = createBoard({ scene: kit.scene, registry, textureSize: platform.isMobile ? 1024 : 2048, kinematics, bus, halfRateIdle: device.weak });
+    boardRef = board;
+    board.setGraveyardLayout(window.innerWidth / window.innerHeight < 0.95 ? 'ends' : 'sides');
+    const markers = createMarkers(kit.scene, { settings, getFaction: (sq) => board.actorAt(sq)?.faction });
+    board.tintListener = (sq, color) => markers.setTint(sq, color);
     await tracker.run(1, async (report) => {
       await fx.init(kit.scene, kit.renderer, rig.camera); // includes physics (rapier) init
       fx.setQuality(startTier);
@@ -169,28 +184,39 @@ async function boot(): Promise<void> {
     const controller = createGameController({ presenter, ai, bus, settings });
     controller.setPhase('loading');
 
-    const gfxDeps = { settings, kit, lighting, post, fx, board, kinematics, tier: () => quality.tier };
+    const gfxDeps = { settings, kit, lighting, post, fx, board, kinematics, tier: () => quality.tier, dynScale: () => quality.dynScale };
     const quality = createQuality({
-      kit, lighting, board, fx, post, platform, settings,
-      renderFrame: (dt) => { board.update(dt); rig.update(dt); post.render(dt); },
+      kit, lighting, board, fx, post, platform, settings, device,
+      renderFrame: (dt) => { board.update(dt); rig.update(dt); lighting.tick(dt, false); post.render(dt); },
       applyGraphics: () => applyGraphics(gfxDeps),
+      notify: toast,
     });
     let benchmarking = false;
-    await tracker.run(2, async (report) => {
-      if (forced) quality.apply(startTier);
-      else {
+    let portraits: Portraits = {};
+    await tracker.run(2, async () => { portraits = renderKingPortraits(kit.renderer, registry); });
+    await tracker.run(3, async (report) => {
+      // Programs first (so the probe measures steady-state frames), then the real FPS probe, then a recompile only if the tier moved.
+      const compileAll = async () => {
+        try { await kit.renderer.compileAsync(kit.scene, rig.camera); } catch { /* older drivers: first frame compiles */ }
+        // Warm what compileAsync cannot see: LOD0 geometry uploads, hidden queen weapons, fade (transparent) variants, cinematic spotlights.
+        board.prewarm(() => post.render(0));
+        prewarmCinematicLights(kit.scene, () => post.render(0));
+      };
+      quality.apply(forced ? startTier : device.guess);
+      report(0.15);
+      await compileAll();
+      report(0.45);
+      if (!forced) {
         benchmarking = true;
+        const before = quality.tier;
         try { await quality.resolve(); } finally { benchmarking = false; }
+        if (quality.tier !== before) await compileAll();
       }
-      report(0.4);
-      // Compile every material for the final light state, then for the cinematic spotlight rig (+3 lights).
-      try { await kit.renderer.compileAsync(kit.scene, rig.camera); } catch { /* older drivers: first frame compiles */ }
-      report(0.7);
-      prewarmCinematicLights(kit.scene, () => post.render(0));
+      lighting.invalidateShadows();
       report(1);
     });
-    await tracker.run(3, async () => { await ai.init().catch((e) => console.warn('[ai] init failed (fallback engine will be used)', e)); });
-    await tracker.run(4, async () => { syncAudio(); }); // audio decode starts on the first gesture (autoplay policy)
+    await tracker.run(4, async () => { await ai.init().catch((e) => console.warn('[ai] init failed (fallback engine will be used)', e)); });
+    await tracker.run(5, async () => { syncAudio(); }); // audio decode starts on the first gesture (autoplay policy)
 
     // ---- attract mode (launch flyover behind the menu) and the Learn area: optional modules, feature-checked
     const createAttract = (cinematics as unknown as { createAttract?: (c: AttractContext) => AttractMode }).createAttract;
@@ -201,7 +227,7 @@ async function boot(): Promise<void> {
     const services: AppServices = { scene: kit.scene, renderer: kit.renderer, camera: rig, registry, board, sequences, fx, audio, kinematics, settings, bus, controller, attract };
     const learnMod = Object.values(learnModules)[0];
     const learn = learnMod?.createLearn?.(services);
-    const learnApi = learn ? { open: (k: LearnKind) => (learn.open ?? learn.start)?.call(learn, k) } : undefined;
+    const learnApi = learn ? { open: (k: LearnKind) => (learn.open ?? learn.start)?.call(learn, k) as void | Promise<unknown> } : undefined;
 
     // ---- entering a game: stop the flyover, show the loading screen, do the real per-game work, then start
     const enterGame = async (config: GameModeConfig) => {
@@ -215,7 +241,7 @@ async function boot(): Promise<void> {
       loading.hide();
     };
 
-    const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, onStart: (c) => { void enterGame(c); }, learn: learnApi });
+    const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, portraits: () => portraits, onStart: (c) => { void enterGame(c); }, learn: learnApi });
     platform.onBack(() => ui.handleBack());
     createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
     ui.hud.onLayout((px) => rig.setReserve(px));
@@ -223,6 +249,7 @@ async function boot(): Promise<void> {
     // ---- settings fan-out
     // Cinematics owns gsap.globalTimeline.timeScale (hit-stop/slow-mo); animSpeed only drives our own tweens.
     rig.setSpeed(settings.get().animSpeed);
+    const perf = createPerf(kit.renderer, uiRoot);
     const fps = createFpsOverlay(uiRoot);
     fps.setVisible(settings.get().graphics.showFps);
     settings.subscribe((s, key) => {
@@ -233,7 +260,7 @@ async function boot(): Promise<void> {
     });
 
     // ---- render loop (GSAP ticker: tweens update first, then we render the same frame). The FPS cap skips frames.
-    let acc = 0;
+    let acc = 0, lastReal = performance.now();
     gsap.ticker.add((time, deltaMs) => {
       if (benchmarking) return;
       acc += deltaMs / 1000;
@@ -241,16 +268,27 @@ async function boot(): Promise<void> {
       if (cap > 0 && acc < 1 / cap - 0.004) return;
       const dt = Math.min(acc, 0.1);
       acc = 0;
+      const nowReal = performance.now();
+      const realDt = (nowReal - lastReal) / 1000;
+      lastReal = nowReal;
       const ts = gsap.globalTimeline.timeScale();
-      fx.update(dt * ts);
-      board.update(dt * ts);
-      kinematics.update(dt * ts); // after mixers and the cinematics tweens
+      perf.frameStart();
+      perf.begin('fx'); fx.update(dt * ts); perf.end('fx');
+      perf.begin('mixers'); board.update(dt * ts); perf.end('mixers');
+      perf.begin('kinemat'); kinematics.update(dt * ts); perf.end('kinemat'); // after mixers and the cinematics tweens
+      perf.begin('misc');
       markers.update(time);
       lighting.update(time, rig.camera.position.z);
+      lighting.tick(dt, sequences.running); // shadow refresh: a few Hz when idle, every frame during a capture
       rig.update(dt);
-      post.render(dt);
+      perf.end('misc');
+      perf.begin('render'); post.render(dt); perf.end('render');
       fps.frame(dt);
+      perf.frame();
+      quality.update(realDt, sequences.running);
     });
+    quality.setMonitoring(true);
+    document.addEventListener('visibilitychange', () => { quality.setMonitoring(!document.hidden); lastReal = performance.now(); });
 
     // ---- debug / test hook
     if (import.meta.env.DEV || params.has('debug')) {
