@@ -242,7 +242,8 @@ async function boot(): Promise<void> {
     };
 
     const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, portraits: () => portraits, onStart: (c) => { void enterGame(c); }, learn: learnApi });
-    platform.onBack(() => ui.handleBack());
+    // Learn screens consume Android back first (its handleBack is an optional extension of the module).
+    platform.onBack(() => (learn as { handleBack?: () => boolean } | undefined)?.handleBack?.() || ui.handleBack());
     createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
     ui.hud.onLayout((px) => rig.setReserve(px));
 
@@ -261,7 +262,7 @@ async function boot(): Promise<void> {
 
     // ---- render loop (GSAP ticker: tweens update first, then we render the same frame). The FPS cap skips frames.
     let acc = 0, lastReal = performance.now();
-    gsap.ticker.add((time, deltaMs) => {
+    const frame = (time: number, deltaMs: number) => {
       if (benchmarking) return;
       acc += deltaMs / 1000;
       const cap = settings.get().graphics.fpsCap;
@@ -286,7 +287,8 @@ async function boot(): Promise<void> {
       fps.frame(dt);
       perf.frame();
       quality.update(realDt, sequences.running);
-    });
+    };
+    gsap.ticker.add(frame);
     quality.setMonitoring(true);
     document.addEventListener('visibilitychange', () => { quality.setMonitoring(!document.hidden); lastReal = performance.now(); });
 
@@ -294,6 +296,8 @@ async function boot(): Promise<void> {
     if (import.meta.env.DEV || params.has('debug')) {
       (window as unknown as Record<string, unknown>).__bc = {
         controller, rig, board, ui, settings, quality, bus, kit, post, fx, lighting, markers, services, attract,
+        // screenshot / bench helpers: stop the render loop (tweens keep running), then draw single frames on demand
+        loop: { pause: () => gsap.ticker.remove(frame), resume: () => gsap.ticker.add(frame), step: (ms = 50) => frame(gsap.ticker.time, ms) },
         squareToScreen: (sq: string) => rig.projectSquare(sq),
         pick: (x: number, y: number) => {
           const r = canvas.getBoundingClientRect();
