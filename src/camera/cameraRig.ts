@@ -28,7 +28,7 @@ const TARGET = new Vector3(0, 0.3, 0);
 const FOV = 32; // long lens: near pieces stay small, far ranks stay readable
 const DEG = Math.PI / 180;
 const LANDSCAPE_POLAR = 46 * DEG;
-const PORTRAIT_POLAR = 36 * DEG;
+const PORTRAIT_POLAR = 31 * DEG;
 const TOP_POLAR = 4 * DEG;
 const SEAT_AZIMUTH: Record<Side, number> = { w: 0, b: Math.PI };
 
@@ -43,6 +43,12 @@ for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
   FRAME_POINTS.push(new Vector3(5.3 * sx, 0, 5.3 * sz));
   FIT_POINTS.push(new Vector3(5.3 * sx, 0, 5.3 * sz), new Vector3(3.6 * sx, 1.6, 3.6 * sz));
 }
+
+// Landscape also keeps the captured-pieces ledges (render/graveyard.ts, x = +-6.2, 1.05 wide) in frame; portrait puts them at the board ends.
+const LEDGE_FIT_POINTS: Vector3[] = [];
+const FIT_ALL: Vector3[] = [];
+for (const sx of [-1, 1]) for (const sz of [-1, 1]) LEDGE_FIT_POINTS.push(new Vector3(6.8 * sx, 0, 3.7 * sz));
+FIT_ALL.push(...FIT_POINTS, ...LEDGE_FIT_POINTS);
 
 export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}): CameraRigImpl {
   const camera = new PerspectiveCamera(FOV, opts.aspect ?? 16 / 9, 0.1, 160);
@@ -90,7 +96,7 @@ export function createCameraRig(dom: HTMLElement, opts: { aspect?: number } = {}
       probe.lookAt(TARGET);
       probe.updateMatrixWorld(true);
       let ok = true;
-      for (const p of FIT_POINTS) {
+      for (const p of aspect > 1.05 ? FIT_ALL : FIT_POINTS) {
         tmp.copy(p).project(probe);
         if (Math.abs(tmp.x) > limX || tmp.y > limHi || tmp.y < limLo || tmp.z > 1) { ok = false; break; }
       }

@@ -15,13 +15,14 @@ export interface GraphicsDeps {
   kinematics: KinematicsApi;
   /** The tier currently in effect (for the pixel-ratio cap). */
   tier: () => QualityTier;
+  /** Dynamic-resolution factor from the quality manager (1 = off). */
+  dynScale?: () => number;
 }
 
 export function applyGraphics(d: GraphicsDeps, g: GraphicsSettings = d.settings.get().graphics): void {
-  d.kit.setResolutionScale(g.resolutionScale);
+  d.kit.setResolutionScale(g.resolutionScale * (d.dynScale?.() ?? 1));
   d.lighting.setShadows(g.shadows);
   d.lighting.setAmbient(g.ambient);
-  d.board.setAmbient(g.ambient);
   d.post.setGraphics?.(g);
   d.fx.setGraphics?.(g);
   d.kinematics.setEnabled(g.secondaryMotion);

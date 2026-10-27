@@ -6,15 +6,14 @@
 //   - Missing clips or sockets are contract errors: logged once, then replaced by procedural fallbacks.
 import { gsap } from 'gsap';
 import {
-  AnimationMixer, Color, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D, PlaneGeometry,
+  AnimationMixer, Color, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D,
   type AnimationAction, type AnimationClip, type Material,
 } from 'three';
-import { makeContactShadowTexture } from '../render/boardTextures';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { AssetId, ClipName, Faction, PieceActor, PieceExtras, Role, Side, SocketName, Square, Timeline } from '../contracts';
 import {
   CLIPS, OPTIONAL_CLIPS, DEFAULT_EXTRAS, DISPLAY_NAME, FACTION_SIDE, LOOPING_CLIPS, ROLE_HEIGHT, SOCKETS, WEAPON_SUMMON_NODE,
-  CONTRACT_VERSION, lodName, restYaw, squareToWorld,
+  CONTRACT_VERSION, BOARD_PIECE_SCALE, lodName, restYaw, squareToWorld,
 } from '../contracts';
 
 export interface PieceTemplate {
@@ -26,12 +25,18 @@ export interface PieceActorImpl extends PieceActor {
   /** 'free' = mixer-driven (Idle/Move), 'scrub' = GSAP-driven (Attack/HitReact/Victory). */
   readonly mode: 'free' | 'scrub';
   setLod(lod: 0 | 1): void;
+  /** Resting uniform scale on the board (BOARD_PIECE_SCALE); cinematics may enlarge fighters and the board restores it. */
+  baseScale: number;
+  /** Current fade alpha (1 = opaque). */
+  readonly fade: number;
+  /** Seconds of simulation time not yet fed to the mixer (idle mixers update at half rate). */
+  pendingDt: number;
+  /** True for the static graveyard variant (no mixer, no collider, frozen pose). */
+  readonly isStatic: boolean;
   /** Return to a clean idle state: clears model offsets, dim, highlight and scrubbed poses. */
   resetPose(): void;
 }
 
-let blobGeo: PlaneGeometry | null = null;
-let blobTex: ReturnType<typeof makeContactShadowTexture> | null = null;
 const loggedErrors = new Set<string>();
 /** Contract violations are logged once per message and never throw: the game keeps running. */
 export function contractError(msg: string): void {
@@ -60,6 +65,10 @@ export interface CreateActorOptions {
   square: Square;
   template: PieceTemplate;
   lod: 0 | 1;
+  /** 'graveyard': static kneeling display piece (end of the Surrender clip, LOD1, no collider / per-frame work). */
+  variant?: 'board' | 'graveyard';
+  /** Uniform scale of the root (default BOARD_PIECE_SCALE, or the graveyard scale when given). */
+  scale?: number;
 }
 
 export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
@@ -137,26 +146,15 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
 
   // ---- collider (raycast target; the skinned mesh is too slow and imprecise)
   const h = ROLE_HEIGHT[role];
-  const collider = new Mesh(new CylinderGeometry(0.4, 0.4, h, 12), new MeshBasicMaterial({ visible: false }));
+  const isStatic = opts.variant === 'graveyard';
+  // world radius ~0.41 at BOARD_PIECE_SCALE: generous but never overlapping a neighbour
+  const collider = new Mesh(new CylinderGeometry(0.5, 0.5, h * 1.05, 12), new MeshBasicMaterial({ visible: false }));
   collider.name = `${id}@collider`;
-  collider.position.y = h / 2;
+  collider.position.y = (h * 1.05) / 2;
   collider.userData.isCollider = true;
-  root.add(collider);
-
-  // ---- soft contact shadow (cheap AO): a dark blob that stays on the board while the piece lifts or hops
-  let blob: Mesh | null = null;
-  if (typeof document !== 'undefined') {
-    blobGeo ??= new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    blobTex ??= makeContactShadowTexture(64);
-    blob = new Mesh(blobGeo, new MeshBasicMaterial({
-      map: blobTex, transparent: true, depthWrite: false, opacity: 0.8, fog: false,
-      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
-    }));
-    blob.scale.set(1.15, 1, 1.15);
-    blob.renderOrder = 3;
-    blob.raycast = () => undefined;
-    root.add(blob);
-  }
+  if (!isStatic) root.add(collider);
+  const baseScale0 = opts.scale ?? (isStatic ? 1 : BOARD_PIECE_SCALE);
+  root.scale.setScalar(baseScale0);
 
   // ---- animation
   const mixer = new AnimationMixer(model);
@@ -172,6 +170,7 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
   let dim = 0;
   let highlight = false;
   let fade = 1;
+  let baseScale = baseScale0;
   let disposed = false;
 
   const squareObj = { value: opts.square };
@@ -183,10 +182,12 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     for (const s of matStates) {
       if (s.color && s.mat.color) {
         s.mat.color.copy(s.color).lerp(DIM_COLOR, dim * 0.72);
+        // Atlas materials mask the emissive term, so the selection glow is a warm brightening of the albedo.
+        if (highlight) s.mat.color.lerp(HIGHLIGHT, 0.22 * (1 - dim)).multiplyScalar(1.22);
       }
       if (s.emissive && s.mat.emissive) {
         s.mat.emissive.copy(s.emissive).multiplyScalar(1 - dim * 0.9);
-        if (highlight) s.mat.emissive.add(_c.copy(HIGHLIGHT).multiplyScalar(0.32 * (1 - dim)));
+        if (highlight && !(s.mat as { emissiveMap?: unknown }).emissiveMap) s.mat.emissive.add(_c.copy(HIGHLIGHT).multiplyScalar(0.32 * (1 - dim)));
       }
     }
   }
@@ -204,6 +205,11 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     get square() { return squareObj.value; },
     set square(v: Square) { squareObj.value = v; },
     get mode() { return mode; },
+    get fade() { return fade; },
+    get isStatic() { return isStatic; },
+    get baseScale() { return baseScale; },
+    set baseScale(v: number) { baseScale = v; },
+    pendingDt: 0,
 
     hasClip: (c) => actions.has(c),
     clipDuration: (c) => actions.get(c)?.getClip().duration ?? 0,
@@ -315,12 +321,6 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     update(dt) {
       if (disposed) return;
       mixer.update(dt);
-      if (blob) {
-        const lift = Math.max(root.position.y, 0);
-        blob.position.y = -root.position.y + 0.008;
-        (blob.material as MeshBasicMaterial).opacity = 0.8 * fade * (1 - Math.min(lift / 1.6, 1));
-        blob.visible = fade > 0.02;
-      }
     },
 
     setLod,
@@ -343,7 +343,6 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
       mixer.uncacheRoot(model);
       root.parent?.remove(root);
       for (const s of matStates) s.mat.dispose();
-      (blob?.material as MeshBasicMaterial | undefined)?.dispose();
       collider.geometry.dispose();
       (collider.material as Material).dispose();
     },
@@ -359,13 +358,35 @@ export function createPieceActor(opts: CreateActorOptions): PieceActorImpl {
     return tl;
   }
 
-  // ---- start idling at a random phase so a board of pieces does not breathe in lockstep
-  const idle = actions.get('Idle');
-  if (idle) {
-    actor.play('Idle', { fade: 0 });
-    idle.time = Math.random() * idle.getClip().duration;
+  if (isStatic) {
+    // Graveyard display: pose once at the end of Surrender (kneeling, weapon on the ground), then freeze. No mixer updates after this.
+    const sur = actions.get('Surrender');
+    if (sur) {
+      sur.reset(); sur.setLoop(LoopOnce, 1); sur.clampWhenFinished = true; sur.enabled = true; sur.play();
+      sur.time = sur.getClip().duration;
+      sur.paused = true;
+      mixer.update(0);
+    } else {
+      contractError(`${id}: no Surrender clip; graveyard piece uses a procedural kneel`);
+      actions.get('Idle')?.play();
+      mixer.update(0);
+      model.position.y = -0.18 * h; model.rotation.x = 0.38; model.scale.y = 0.88;
+    }
+    setLod(1);
+    dim = 0.3;
+    root.updateMatrixWorld(true);
+    model.traverse((o) => { o.matrixAutoUpdate = false; });
+    collider.visible = false;
+    for (const m of meshesAll) m.castShadow = true;
   } else {
-    contractError(`${id}: no Idle clip; actor will stand still`);
+    // start idling at a random phase so a board of pieces does not breathe in lockstep
+    const idle = actions.get('Idle');
+    if (idle) {
+      actor.play('Idle', { fade: 0 });
+      idle.time = Math.random() * idle.getClip().duration;
+    } else {
+      contractError(`${id}: no Idle clip; actor will stand still`);
+    }
   }
   applyMaterials();
   return actor;

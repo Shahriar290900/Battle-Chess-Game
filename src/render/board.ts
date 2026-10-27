@@ -1,17 +1,19 @@
 // The board: an original procedural build, entirely in code. Dark carved stone with bronze inlay on the
 // Emberhold side that transitions to frosted obsidian on the Rime side, set in a thick labelled frame on
 // a round dais. Tiles are one 64-instance InstancedMesh (used for picking). Also implements BoardApi.
+import { gsap } from 'gsap';
 import {
-  AdditiveBlending, BoxGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedMesh, Matrix4,
-  Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Raycaster, Shape, Path, Sprite, SpriteMaterial, TorusGeometry, Vector3,
+  BoxGeometry, Color, CylinderGeometry, ExtrudeGeometry, Group, InstancedMesh, Matrix4,
+  Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Raycaster, Shape, Path, Vector3,
   type Intersection, type Scene,
 } from 'three';
-import type { BoardApi, Faction, KinematicsApi, PieceActor, Role, Square } from '../contracts';
-import { FILES, SIDE_FACTION, isLightSquare, squareToWorld, restYaw } from '../contracts';
+import type { BoardApi, EventBus, Faction, KinematicsApi, PieceActor, Role, Square } from '../contracts';
+import { BOARD_PIECE_SCALE, FILES, SIDE_FACTION, isLightSquare, squareToWorld, restYaw } from '../contracts';
+import { createGraveyard, type CapturedPiece, type Graveyard } from './graveyard';
 import { parsePlacement } from '../core/rules';
 import type { AssetRegistryImpl } from '../assets/registry';
 import type { PieceActorImpl } from '../assets/pieceActor';
-import { FRAME_SIZE, makeFrameTexture, makeGlowTexture, makeInlayTexture, makeMarbleTexture, makeSlabTexture, makeTileGlowTexture } from './boardTextures';
+import { FRAME_SIZE, makeContactShadowTexture, makeFrameTexture, makeInlayTexture, makeMarbleTexture, makeSlabTexture } from './boardTextures';
 
 export interface BoardImpl extends BoardApi {
   readonly root: Group;
@@ -23,9 +25,19 @@ export interface BoardImpl extends BoardApi {
   allActors(): PieceActorImpl[];
   actorAt(sq: Square): PieceActorImpl | undefined;
   spawnActor(faction: Faction, role: Role, sq: Square): PieceActorImpl;
+  /** Default LOD of pieces standing on the board (fighters of a capture are always upgraded to LOD0 while it plays). */
   setLod(lod: 0 | 1): void;
-  /** Show or hide the corner braziers (graphics: ambient). */
-  setAmbient(on: boolean): void;
+  /** Live presenter hint: the next capture is `from` x `to` (exact attacker/defender; otherwise inferred from the capture:begin event). */
+  hintFight(from: Square, victimSquare: Square): void;
+  /** Captured-pieces ledges: show these pieces (kneeling). A single added piece fades in; anything else rebuilds instantly. */
+  syncGraveyard(captured: CapturedPiece[]): void;
+  /** Ledge layout follows the camera aspect: beside the board in landscape, at the board ends in portrait. */
+  setGraveyardLayout(layout: 'sides' | 'ends'): void;
+  readonly graveyard: Graveyard;
+  /** Notified on every tintSquare call so the markers can draw the tint in the active highlight style. */
+  tintListener: ((sq: Square, color: number | null) => void) | null;
+  /** Loading-time warm-up: renders once with every LOD0 mesh, hidden queen weapon and fade (transparent) variant visible so nothing compiles or uploads mid-game. */
+  prewarm(render: () => void): void;
   /** Per-frame update (actor mixers). dt already scaled by gsap time scale. */
   update(dt: number): void;
 }
@@ -37,11 +49,15 @@ export interface BoardOptions {
   textureSize?: number;
   /** Procedural animation layer: actors are attached on spawn and detached on removal. */
   kinematics?: KinematicsApi;
+  /** Event bus (capture:begin / capture:end drive the LOD0 upgrade of the two fighters). */
+  bus?: EventBus;
+  /** Idle mixers update every other frame when true (CPU saver on weak devices). */
+  halfRateIdle?: boolean;
 }
 
 // Bone marble / pale cool marble on light squares; basalt / blue slate on dark squares.
-const TILE_LIGHT_EMBER = new Color(0xb9a98c), TILE_DARK_EMBER = new Color(0x38332e);
-const TILE_LIGHT_RIME = new Color(0xaab7c0), TILE_DARK_RIME = new Color(0x26303b);
+const TILE_LIGHT_EMBER = new Color(0xcdbd9c), TILE_DARK_EMBER = new Color(0x54453a);
+const TILE_LIGHT_RIME = new Color(0xb9cbd9), TILE_DARK_RIME = new Color(0x364760);
 
 const idx = (sq: Square) => (Number(sq[1]) - 1) * 8 + FILES.indexOf(sq[0]);
 const sqOfIndex = (i: number): Square => FILES[i % 8] + String(Math.floor(i / 8) + 1);
@@ -54,7 +70,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   scene.add(root);
 
   // ---------- base: dark body + a metal grid plate (bronze → frosted silver) that shows through the tile gaps
-  const body = new Mesh(new BoxGeometry(8.1, 0.3, 8.1), new MeshStandardMaterial({ color: 0x14110e, roughness: 0.8, metalness: 0.2 }));
+  const body = new Mesh(new BoxGeometry(8.1, 0.3, 8.1), new MeshStandardMaterial({ color: 0x2c241d, roughness: 0.8, metalness: 0.2 }));
   body.position.y = -0.1 - 0.15 - 0.02;
   body.receiveShadow = true;
   root.add(body);
@@ -74,7 +90,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   const tileGeo = new ExtrudeGeometry(sq, { depth: DEPTH, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 1, curveSegments: 1 });
   tileGeo.rotateX(-Math.PI / 2);
   tileGeo.translate(0, -(DEPTH + BEVEL), 0); // top surface at y = 0
-  const tileMat = new MeshStandardMaterial({ map: makeMarbleTexture(Math.min(texSize, 2048)), roughness: 0.34, metalness: 0.06, envMapIntensity: 1.4 });
+  const tileMat = new MeshStandardMaterial({ map: makeMarbleTexture(Math.min(texSize, 2048)), roughness: 0.36, metalness: 0.06, envMapIntensity: 0.9 });
   tileMat.onBeforeCompile = (shader) => {
     // Sample the board-sized marble map by world x/z instead of per-tile UVs.
     shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
@@ -122,20 +138,6 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   inlay.raycast = () => undefined;
   root.add(inlay);
 
-  // ---------- tint glow quads (one per tile, scaled to 0 when idle)
-  const glowTex = makeTileGlowTexture(128);
-  const glowMat = new MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0.85 });
-  const glow = new InstancedMesh(new PlaneGeometry(0.97, 0.97).rotateX(-Math.PI / 2), glowMat, 64);
-  glow.position.y = 0.006;
-  glow.renderOrder = 2;
-  glow.frustumCulled = false;
-  glow.raycast = () => undefined;
-  const zero = new Matrix4().makeScale(0, 0, 0);
-  for (let i = 0; i < 64; i++) { glow.setMatrixAt(i, zero); glow.setColorAt(i, tmpC.set(0)); }
-  glow.instanceMatrix.needsUpdate = true;
-  glow.instanceColor!.needsUpdate = true;
-  root.add(glow);
-
   // ---------- frame (thick, bevelled, labelled)
   const outer = FRAME_SIZE / 2, inner = 4.06;
   const shape = new Shape();
@@ -158,47 +160,14 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   frame.raycast = () => undefined;
   root.add(frame);
 
-  // ---------- corner braziers: small bronze (Emberhold) / silver (Rime) cups with a low flame
-  const flames: Array<{ s: Sprite; base: number; phase: number }> = [];
-  const brazierGroup = new Group();
-  root.add(brazierGroup);
-  {
-    const glowTex = makeGlowTexture(64);
-    const cupBronze = new MeshStandardMaterial({ color: 0x6a4a28, roughness: 0.4, metalness: 0.85 });
-    const cupSilver = new MeshStandardMaterial({ color: 0x6d7f8c, roughness: 0.35, metalness: 0.85 });
-    const cupGeo = new CylinderGeometry(0.14, 0.08, 0.15, 12);
-    const rimGeo = new TorusGeometry(0.14, 0.02, 6, 16).rotateX(Math.PI / 2);
-    for (const mx of [-1, 1]) for (const mz of [-1, 1]) {
-      const warm = mz > 0;
-      const g = new Group();
-      g.position.set(mx * 4.72, 0.09, mz * 4.72);
-      const cup = new Mesh(cupGeo, warm ? cupBronze : cupSilver);
-      cup.position.y = 0.075;
-      cup.castShadow = true;
-      const rim = new Mesh(rimGeo, warm ? cupBronze : cupSilver);
-      rim.position.y = 0.15;
-      const coal = new Mesh(new CylinderGeometry(0.11, 0.11, 0.02, 12), new MeshBasicMaterial({ color: warm ? 0xff7a1a : 0x6fd3ff }));
-      coal.position.y = 0.14;
-      g.add(cup, rim, coal);
-      for (const [size, y, op, ph] of [[0.28, 0.3, 0.9, 0], [0.55, 0.36, 0.22, 1.9]] as const) {
-        const sp = new Sprite(new SpriteMaterial({ map: glowTex, color: warm ? 0xff8a30 : 0x7fd8ff, transparent: true, opacity: op, blending: AdditiveBlending, depthWrite: false, fog: false }));
-        sp.scale.set(size, size * 1.3, 1);
-        sp.position.y = y;
-        g.add(sp);
-        flames.push({ s: sp, base: size, phase: ph + mx + mz * 2 });
-      }
-      brazierGroup.add(g);
-    }
-  }
-
   // ---------- dais
-  const daisMat = new MeshStandardMaterial({ color: 0x0e0b09, roughness: 0.8, metalness: 0.2 });
-  const dais = new Mesh(new CylinderGeometry(7.9, 8.3, 0.55, 64), daisMat);
+  const daisMat = new MeshStandardMaterial({ color: 0x5a4d41, roughness: 0.72, metalness: 0.15 });
+  const dais = new Mesh(new CylinderGeometry(9.0, 9.4, 0.55, 64), daisMat);
   dais.position.y = -0.36 - 0.275;
   dais.receiveShadow = true;
   dais.castShadow = true;
   root.add(dais);
-  const daisRing = new Mesh(new CylinderGeometry(8.6, 8.9, 0.3, 64), new MeshStandardMaterial({ color: 0x0a0807, roughness: 0.85, metalness: 0.15 }));
+  const daisRing = new Mesh(new CylinderGeometry(9.8, 10.2, 0.3, 64), new MeshStandardMaterial({ color: 0x40362e, roughness: 0.8, metalness: 0.15 }));
   daisRing.position.y = -0.95 - 0.1;
   daisRing.receiveShadow = true;
   root.add(daisRing);
@@ -206,14 +175,96 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   // ---------- actors
   const bySquare = new Map<Square, PieceActorImpl>();
   const actors = new Set<PieceActorImpl>();
+  const actorList: PieceActorImpl[] = []; // iteration without allocating each frame
   const tints = new Map<Square, number>();
+  const tintC = new Color();
   let clock = 0;
+  let defaultLod: 0 | 1 = 1;
+  let frameNo = 0;
+  const addActor = (a: PieceActorImpl) => { actors.add(a); actorList.push(a); a.setLod(defaultLod); };
+  const dropActor = (a: PieceActorImpl): boolean => {
+    if (!actors.delete(a)) return false;
+    actorList.splice(actorList.indexOf(a), 1);
+    fighting.delete(a);
+    return true;
+  };
+
+  // ---------- contact shadows: one instanced draw for every piece (cheap AO that also carries the Low tier)
+  const BLOB_CAP = 48;
+  const blobTex = makeContactShadowTexture(64);
+  const blobs = new InstancedMesh(
+    new PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+    new MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
+    BLOB_CAP,
+  );
+  blobs.frustumCulled = false;
+  blobs.renderOrder = 3;
+  blobs.raycast = () => undefined;
+  blobs.count = 0;
+  root.add(blobs);
+  const blobMat = blobs.instanceMatrix.array as Float32Array;
+  const blobPrev = new Float32Array(BLOB_CAP * 4).fill(-1);
+  let blobDirty = false;
+  const writeBlob = (i: number, x: number, y: number, z: number, s: number) => {
+    const k = i * 4;
+    if (blobPrev[k] === x && blobPrev[k + 1] === y && blobPrev[k + 2] === z && blobPrev[k + 3] === s) return;
+    blobPrev[k] = x; blobPrev[k + 1] = y; blobPrev[k + 2] = z; blobPrev[k + 3] = s;
+    const o = i * 16;
+    blobMat[o] = s; blobMat[o + 1] = 0; blobMat[o + 2] = 0; blobMat[o + 3] = 0;
+    blobMat[o + 4] = 0; blobMat[o + 5] = s; blobMat[o + 6] = 0; blobMat[o + 7] = 0;
+    blobMat[o + 8] = 0; blobMat[o + 9] = 0; blobMat[o + 10] = s; blobMat[o + 11] = 0;
+    blobMat[o + 12] = x; blobMat[o + 13] = y; blobMat[o + 14] = z; blobMat[o + 15] = 1;
+    blobDirty = true;
+  };
+  const BLOB_RADIUS = 1.15 / BOARD_PIECE_SCALE; // texture footprint in model units; scaled with the actor
+
+  // ---------- fights: the two fighters of a capture are upgraded to LOD0 and full size while it plays
+  const fighting = new Set<PieceActorImpl>();
+  let hint: { attacker: PieceActorImpl; victim: PieceActorImpl; at: number } | null = null;
+  const upgrade = (a: PieceActorImpl) => {
+    if (fighting.has(a)) return;
+    fighting.add(a);
+    a.setLod(0);
+    gsap.to(a.root.scale, { x: 1, y: 1, z: 1, duration: 0.3, ease: 'power2.out', overwrite: true });
+  };
+  const downgrade = (a: PieceActorImpl, animate: boolean) => {
+    if (!fighting.delete(a)) return;
+    gsap.killTweensOf(a.root.scale);
+    const done = () => { if (!fighting.has(a)) a.setLod(defaultLod); };
+    if (animate && actors.has(a)) gsap.to(a.root.scale, { x: a.baseScale, y: a.baseScale, z: a.baseScale, duration: 0.45, ease: 'power2.inOut', onComplete: done });
+    else { a.root.scale.setScalar(a.baseScale); done(); }
+  };
+  const nearest = (faction: Faction, role: Role, to: Vector3, not: PieceActorImpl | undefined) => {
+    let best: PieceActorImpl | undefined, bd = Infinity;
+    for (const a of actorList) {
+      if (a === not || a.faction !== faction || a.role !== role) continue;
+      const d = Math.hypot(a.root.position.x - to.x, a.root.position.z - to.z);
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
+  };
+  const offBus = [
+    opts.bus?.on('capture:begin', (e) => {
+      let victim: PieceActorImpl | undefined, attacker: PieceActorImpl | undefined;
+      if (hint && performance.now() - hint.at < 2000 && hint.victim.faction === e.defenderFaction && hint.victim.role === e.defender) { victim = hint.victim; attacker = hint.attacker; }
+      hint = null;
+      victim ??= bySquare.get(e.square);
+      if (!victim || victim.role !== e.defender) victim = nearest(e.defenderFaction, e.defender, squareToWorld(e.square), undefined);
+      attacker ??= nearest(e.attackerFaction, e.attacker, victim ? victim.root.position : squareToWorld(e.square), victim);
+      if (victim) upgrade(victim);
+      if (attacker) upgrade(attacker);
+    }),
+    opts.bus?.on('capture:end', () => { for (const a of [...fighting]) downgrade(a, true); }),
+  ];
+
+  // ---------- captured-pieces ledges
+  const graveyard = createGraveyard({ root, registry, bus: opts.bus });
 
   const board: BoardImpl = {
     scene, root, tiles,
 
     actorAt: (sq) => bySquare.get(sq),
-    allActors: () => [...actors],
+    allActors: () => actorList.slice(),
 
     setActorSquare(actor, sq) {
       const a = actor as PieceActorImpl;
@@ -226,7 +277,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       // Idempotent: cinematics removes the defender before re-keying the attacker, and skip paths may call twice.
       const a = actor as PieceActorImpl;
       if (bySquare.get(a.square) === a) bySquare.delete(a.square);
-      if (!actors.delete(a)) return;
+      if (!dropActor(a)) return;
       opts.kinematics?.detach(a);
       a.dispose();
     },
@@ -236,7 +287,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       if (existing) board.removeActor(existing);
       const a = registry.createActor(faction, role, sq);
       root.add(a.root);
-      actors.add(a);
+      addActor(a);
       bySquare.set(sq, a);
       opts.kinematics?.attach(a);
       return a;
@@ -248,18 +299,13 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       const i = idx(sq);
       if (color === null) {
         tints.delete(sq);
-        glow.setMatrixAt(i, zero);
         tiles.setColorAt(i, baseColors[i]);
       } else {
         tints.set(sq, color);
-        const p = squareToWorld(sq);
-        glow.setMatrixAt(i, m4.makeTranslation(p.x, 0, p.z));
-        glow.setColorAt(i, tmpC.set(color));
-        tiles.setColorAt(i, tmpC.copy(baseColors[i]).lerp(new Color(color), 0.28));
+        tiles.setColorAt(i, tmpC.copy(baseColors[i]).lerp(tintC.set(color), 0.2));
       }
-      glow.instanceMatrix.needsUpdate = true;
-      glow.instanceColor!.needsUpdate = true;
       tiles.instanceColor!.needsUpdate = true;
+      board.tintListener?.(sq, color);
     },
 
     syncToFen(fen) {
@@ -282,14 +328,14 @@ export function createBoard(opts: BoardOptions): BoardImpl {
         else {
           const spawned = registry.createActor(SIDE_FACTION[w.side], w.role, sq);
           root.add(spawned.root);
-          actors.add(spawned);
+          addActor(spawned);
           bySquare.set(sq, spawned);
           opts.kinematics?.attach(spawned);
           a = spawned;
         }
         claimed.add(a);
       }
-      for (const a of spare) { actors.delete(a); opts.kinematics?.detach(a); a.dispose(); }
+      for (const a of spare) { dropActor(a); opts.kinematics?.detach(a); a.dispose(); }
       // 3. snap transforms and clean up leftover pose state (safety net after skipped sequences)
       const p = new Vector3();
       for (const a of claimed) {
@@ -298,7 +344,8 @@ export function createBoard(opts: BoardOptions): BoardImpl {
         if (Math.abs(r.position.x - p.x) > 1e-3 || Math.abs(r.position.z - p.z) > 1e-3 || Math.abs(r.position.y) > 1e-3) r.position.set(p.x, 0, p.z);
         const yaw = restYaw(a.side);
         if (Math.abs(Math.atan2(Math.sin(r.rotation.y - yaw), Math.cos(r.rotation.y - yaw))) > 0.02) r.rotation.y = yaw;
-        if (r.scale.x !== 1) r.scale.setScalar(1);
+        if (fighting.has(a)) downgrade(a, false);
+        else if (r.scale.x !== a.baseScale) r.scale.setScalar(a.baseScale);
         r.visible = true;
         if (a.mode === 'scrub' || a.model.position.lengthSq() > 1e-6 || Math.abs(a.model.rotation.x) > 1e-4 || Math.abs(a.model.rotation.z) > 1e-4) a.resetPose();
         else { a.setDim(0); a.setHighlight(false); }
@@ -321,22 +368,65 @@ export function createBoard(opts: BoardOptions): BoardImpl {
       return null;
     },
 
-    setAmbient(on) { brazierGroup.visible = on; },
-
     setLod(lod) {
+      defaultLod = lod;
       registry.lod = lod;
-      for (const a of actors) a.setLod(lod);
+      for (const a of actorList) if (!fighting.has(a)) a.setLod(lod);
     },
 
-    update(dt) {
-      for (const a of actors) a.update(dt);
-      clock += dt;
-      for (const f of flames) {
-        const k = 1 + Math.sin(clock * 9 + f.phase) * 0.12 + Math.sin(clock * 15 + f.phase * 2) * 0.06;
-        f.s.scale.set(f.base * (1 + (k - 1) * 0.5), f.base * 1.3 * k, 1);
+    hintFight(from, victimSquare) {
+      const attacker = bySquare.get(from), victim = bySquare.get(victimSquare);
+      hint = attacker && victim ? { attacker, victim, at: performance.now() } : null;
+    },
+
+    prewarm(render) {
+      const seen = new Set<string>();
+      for (const a of actorList) {
+        a.setLod(0);
+        if (a.role === 'queen') a.setWeaponSummon(0.01);
+        if (!seen.has(a.id)) { seen.add(a.id); a.setFade(0.5); }
+      }
+      try { render(); } finally {
+        for (const a of actorList) {
+          a.setLod(fighting.has(a) ? 0 : defaultLod);
+          if (a.role === 'queen') a.setWeaponSummon(0);
+          if (a.fade < 1) a.setFade(1);
+        }
       }
     },
+
+    tintListener: null,
+    syncGraveyard(captured) { graveyard.sync(captured); },
+    setGraveyardLayout(layout) { graveyard.setLayout(layout); },
+    graveyard,
+
+    update(dt) {
+      frameNo++;
+      const half = !!opts.halfRateIdle;
+      for (let i = 0; i < actorList.length; i++) {
+        const a = actorList[i];
+        a.pendingDt += dt;
+        // Idle (free-running) mixers on weak devices update every other frame, staggered per actor.
+        if (half && a.mode === 'free' && ((frameNo + i) & 1)) continue;
+        a.update(a.pendingDt);
+        a.pendingDt = 0;
+      }
+      // contact shadows (one instanced draw)
+      let n = 0;
+      for (let i = 0; i < actorList.length && n < BLOB_CAP; i++) {
+        const a = actorList[i];
+        const r = a.root;
+        const lift = Math.max(r.position.y, 0);
+        const vis = r.visible && a.fade > 0.02;
+        const sc = vis ? BLOB_RADIUS * r.scale.x * (1 - 0.4 * Math.min(lift / 1.6, 1)) * (a.fade < 0.5 ? a.fade * 2 : 1) : 0;
+        writeBlob(n++, r.position.x, 0.008, r.position.z, sc);
+      }
+      if (blobs.count !== n) { blobs.count = n; blobDirty = true; }
+      if (blobDirty) { blobs.instanceMatrix.needsUpdate = true; blobDirty = false; }
+      clock += dt;
+    },
   };
+  void offBus;
 
   return board;
 }

@@ -4,6 +4,7 @@ import type {
   AssetRegistry, CameraRig, EventBus, FxApi, KinematicsApi, MoveResult, PromotionRole, SequenceContext, SequencePlayer, SettingsStore, Side, Square,
 } from '../contracts';
 import type { BoardImpl } from '../render/board';
+import { capturedFromFen } from '../render/graveyard';
 import type { GamePresenter } from './presenter';
 
 export interface LivePresenterDeps {
@@ -28,11 +29,13 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
   const ctx = (move: MoveResult): SequenceContext => ({
     move, board: d.board, camera: d.camera, fx: d.fx, registry: d.registry, bus: d.bus, settings: d.settings.get(), kinematics: d.kinematics,
   });
+  /** Snap the board to a position, refresh the debris colliders and the captured-pieces ledges. */
+  const sync = (fen: string) => { d.board.syncToFen(fen); d.fx.setStaticActors?.(d.board.allActors()); d.board.syncGraveyard(capturedFromFen(fen)); };
   const run = async (fn: () => Promise<void>, fen?: string) => {
     const gen = generation;
     try { await fn(); } catch (e) { console.error('[presenter] sequence failed', e); }
     if (gen !== generation) return;
-    if (fen) { d.board.syncToFen(fen); d.fx.setStaticActors?.(d.board.allActors()); }
+    if (fen) sync(fen);
   };
 
   return {
@@ -40,13 +43,13 @@ export function createLivePresenter(d: LivePresenterDeps): GamePresenter {
     reset(fen) {
       generation++;
       d.sequences.skip();
-      d.board.syncToFen(fen);
-      d.fx.setStaticActors?.(d.board.allActors());
+      sync(fen);
       this.markCheck(null);
-      },
-    syncToFen: (fen) => { d.board.syncToFen(fen); d.fx.setStaticActors?.(d.board.allActors()); },
+    },
+    syncToFen: (fen) => sync(fen),
     playMove(m) {
       const c = ctx(m);
+      if (m.captured) d.board.hintFight(m.from, m.capturedSquare ?? m.to);
       const fn = () => (m.captured ? d.sequences.capture(c) : m.isCastle ? d.sequences.castle(c) : d.sequences.move(c));
       // Promotion moves sync after the reveal: the FEN already holds the promoted piece.
       return run(fn, m.promotion ? undefined : m.fenAfter);

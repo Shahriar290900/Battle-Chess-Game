@@ -38,7 +38,7 @@ export interface GraphicsSettings {
 export const GRAPHICS_PRESETS: Record<QualityTier, GraphicsSettings> = {
   high: { preset: 'high', resolutionScale: 1, shadows: 'high', bloom: true, antialias: true, particles: 'high', physics: 'full', ambient: true, secondaryMotion: true, showFps: false, fpsCap: 0 },
   medium: { preset: 'medium', resolutionScale: 1, shadows: 'low', bloom: true, antialias: false, particles: 'medium', physics: 'full', ambient: true, secondaryMotion: true, showFps: false, fpsCap: 60 },
-  low: { preset: 'low', resolutionScale: 0.75, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false, fpsCap: 30 },
+  low: { preset: 'low', resolutionScale: 1, shadows: 'off', bloom: false, antialias: false, particles: 'low', physics: 'simple', ambient: false, secondaryMotion: false, showFps: false, fpsCap: 30 },
 };
 
 /** Legal-move / selection / last-move tile highlight style (settings → Gameplay). */

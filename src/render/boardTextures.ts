@@ -75,9 +75,9 @@ export function makeMarbleTexture(size = 2048): CanvasTexture {
       }
       g.stroke();
     };
-    trace(size * 0.012, 0.035, 70);
-    trace(size * 0.005, 0.07, 80);
-    trace(Math.max(1, size * 0.0016), 0.16, 90);
+    trace(size * 0.012, 0.06, 70);
+    trace(size * 0.005, 0.12, 80);
+    trace(Math.max(1, size * 0.0016), 0.3, 90);
   }
   // fine grain
   for (let i = 0; i < size * size * 0.04; i++) {
@@ -165,7 +165,7 @@ export function makeFrameTexture(size = 2048): CanvasTexture {
   const S = size / FRAME_SIZE;
   const W = FRAME_SIZE;
   const border = (W - 8) / 2;
-  g.fillStyle = '#1b120c';
+  g.fillStyle = '#4b3220';
   g.fillRect(0, 0, size, size);
   // wood grain follows each band: horizontal streaks on the top/bottom bands, vertical on the sides
   const streak = (x0: number, y0: number, x1: number, y1: number, horizontal: boolean) => {
@@ -173,7 +173,7 @@ export function makeFrameTexture(size = 2048): CanvasTexture {
       const len = (60 + r() * 360) * (size / 2048);
       let x = x0 + r() * (x1 - x0), y = y0 + r() * (y1 - y0);
       const dark = r() < 0.55;
-      g.strokeStyle = dark ? `rgba(8,4,2,${0.18 + r() * 0.25})` : `rgba(96,62,36,${0.10 + r() * 0.16})`;
+      g.strokeStyle = dark ? `rgba(24,12,5,${0.16 + r() * 0.22})` : `rgba(150,104,62,${0.12 + r() * 0.18})`;
       g.lineWidth = 0.6 + r() * 1.8;
       g.beginPath(); g.moveTo(x, y);
       const wob = (r() - 0.5) * 6;
@@ -248,11 +248,11 @@ export function makeFrameTexture(size = 2048): CanvasTexture {
 export function makeFloorTexture(size = 1024): CanvasTexture {
   const [c, g] = canvas(size);
   const r = rng(5);
-  g.fillStyle = '#34312f';
+  g.fillStyle = '#4e4a46';
   g.fillRect(0, 0, size, size);
-  const n = 4, cell = size / n;
+  const n = 6, cell = size / n;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const v = 40 + Math.floor(r() * 26);
+    const v = 58 + Math.floor(r() * 26);
     g.fillStyle = `rgb(${v + 4},${v + 2},${v})`;
     g.fillRect(x * cell + 3, y * cell + 3, cell - 6, cell - 6);
     for (let k = 0; k < 6; k++) {
@@ -264,8 +264,8 @@ export function makeFloorTexture(size = 1024): CanvasTexture {
       g.fillStyle = rg; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
     }
   }
-  g.strokeStyle = 'rgba(0,0,0,0.75)';
-  g.lineWidth = 6;
+  g.strokeStyle = 'rgba(0,0,0,0.6)';
+  g.lineWidth = 5;
   for (let i = 0; i <= n; i++) {
     g.beginPath(); g.moveTo(i * cell, 0); g.lineTo(i * cell, size); g.stroke();
     g.beginPath(); g.moveTo(0, i * cell); g.lineTo(size, i * cell); g.stroke();

@@ -6,11 +6,15 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { AssetId, AssetRegistry, Faction, PieceActor, Role, Square } from '../contracts';
 import { ALL_ASSET_IDS, assetId, fragmentsRootName, fragmentsUrl, modelUrl } from '../contracts';
 import { createPieceActor, type PieceActorImpl, type PieceTemplate } from './pieceActor';
+import { bakePieceAtlas } from './atlas';
+import { GRAVEYARD_PIECE_SCALE } from '../contracts';
 
 export interface AssetRegistryImpl extends AssetRegistry {
   /** 0 = full-detail, 1 = reduced mesh; applied to actors created from now on. */
   lod: 0 | 1;
   createActor(faction: Faction, role: Role, square: Square): PieceActorImpl;
+  /** Static kneeling display piece for the captured-pieces ledges (LOD1, Surrender end pose, never updated). */
+  createGraveyardActor(faction: Faction, role: Role): PieceActorImpl;
   /** Fetch all fragment sets in the background so the first capture does not hitch. */
   warmFragments(onProgress?: (done: number, total: number) => void): Promise<void>;
   readonly ready: boolean;
@@ -22,7 +26,13 @@ interface FragInstance { rest: RestEntry[]; mats: Array<{ live: Material; orig: 
 
 const baseUrl = () => (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || './';
 
-export function createAssetRegistry(): AssetRegistryImpl {
+export interface RegistryOptions {
+  /** Atlas cell size in px (256 desktop, 128 on weak/mobile GPUs). 0 disables merging (original materials). */
+  atlasCell?: number;
+  anisotropy?: number;
+}
+
+export function createAssetRegistry(opts: RegistryOptions = {}): AssetRegistryImpl {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
 
@@ -78,6 +88,7 @@ export function createAssetRegistry(): AssetRegistryImpl {
       onProgress?.(0, total);
       await Promise.all(ALL_ASSET_IDS.map(async (id) => {
         const gltf = await load(modelUrl(id));
+        if ((opts.atlasCell ?? 256) > 0) bakePieceAtlas(gltf.scene, id, { cell: opts.atlasCell ?? 256, anisotropy: opts.anisotropy });
         templates.set(id, { scene: gltf.scene, animations: gltf.animations });
         onProgress?.(++done, total);
       }));
@@ -89,6 +100,13 @@ export function createAssetRegistry(): AssetRegistryImpl {
       const template = templates.get(id);
       if (!template) throw new Error(`[assets] ${id} not loaded; call preload() first`);
       return createPieceActor({ id, faction, role, square, template, lod: registry.lod });
+    },
+
+    createGraveyardActor(faction, role) {
+      const id = assetId(faction, role);
+      const template = templates.get(id);
+      if (!template) throw new Error(`[assets] ${id} not loaded; call preload() first`);
+      return createPieceActor({ id, faction, role, square: 'a1', template, lod: 1, variant: 'graveyard', scale: GRAVEYARD_PIECE_SCALE });
     },
 
     async acquireFragments(id) {

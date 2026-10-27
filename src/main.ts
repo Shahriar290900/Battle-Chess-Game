@@ -199,6 +199,7 @@ async function boot(): Promise<void> {
       const compileAll = async () => {
         try { await kit.renderer.compileAsync(kit.scene, rig.camera); } catch { /* older drivers: first frame compiles */ }
         // Warm what compileAsync cannot see: LOD0 geometry uploads, hidden queen weapons, fade (transparent) variants, cinematic spotlights.
+        lighting.invalidateShadows();
         board.prewarm(() => post.render(0));
         prewarmCinematicLights(kit.scene, () => post.render(0));
       };
@@ -289,8 +290,8 @@ async function boot(): Promise<void> {
       quality.update(realDt, sequences.running);
     };
     gsap.ticker.add(frame);
-    quality.setMonitoring(true);
-    document.addEventListener('visibilitychange', () => { quality.setMonitoring(!document.hidden); lastReal = performance.now(); });
+    quality.setMonitoring(!forced); // an explicit ?quality= (tests, benchmarks) is never auto-adjusted
+    document.addEventListener('visibilitychange', () => { quality.setMonitoring(!document.hidden && !forced); lastReal = performance.now(); });
 
     // ---- debug / test hook
     if (import.meta.env.DEV || params.has('debug')) {
