@@ -30,6 +30,16 @@ export interface GameEvents {
   'taunt': { faction: Faction; role: Role };
   'surrender': { side: Side };
   'loading:progress': { loaded: number; total: number; stage: string };
+  /** A piece glides across the board (stone/ice grinding loop). speed in squares/s; 'stop' ends the loop. */
+  'move:slide': { faction: Faction; role: Role; phase: 'start' | 'stop'; speed: number };
+  /** Shield/guard parries a blow (bright flash + ring). */
+  'shield:flash': { faction: Faction };
+  /** Shield or guard breaks apart. */
+  'shield:break': { faction: Faction };
+  /** Weapon bites armour (non-lethal beat inside a fight). */
+  'armour:hit': { faction: Faction; heavy: boolean };
+  /** Hop / leap / slam landing. strength 0–1. */
+  'land': { faction: Faction; role: Role; strength: number };
 }
 
 export type GameModeKind = 'vs-ai' | 'hotseat';

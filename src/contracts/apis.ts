@@ -14,6 +14,37 @@ export type CaptureMode = 'full' | 'quick' | 'off';
 export type QualityTier = 'high' | 'medium' | 'low';
 export type AiLevel = 'easy' | 'medium' | 'hard' | 'master';
 
+/** Computer strength in Elo (contract v1.4). Stockfish UCI_Elo covers >=1320; below that the AI uses
+ *  Skill Level 0 + shallow search + calibrated blunders. Named tiers are UI sugar over this number. */
+export const AI_ELO_MIN = 400;
+export const AI_ELO_MAX = 3000;
+export const AI_ELO_TIERS = [
+  { name: 'Squire', elo: 400 }, { name: 'Footman', elo: 800 }, { name: 'Knight', elo: 1200 },
+  { name: 'Captain', elo: 1600 }, { name: 'Champion', elo: 2000 }, { name: 'Warlord', elo: 2400 },
+  { name: 'Grandmaster', elo: 2800 },
+] as const;
+/** Legacy level → Elo (settings migration). */
+export const LEGACY_LEVEL_ELO: Record<AiLevel, number> = { easy: 600, medium: 1200, hard: 1800, master: 2600 };
+
+/** Board/piece readability (render-readability). */
+export type ContrastMode = 'soft' | 'standard' | 'vivid';
+
+/** Data-driven themes / piece sets (future customisation; one of each ships now). */
+export interface BoardTheme {
+  id: string;
+  name: string;
+  /** Square albedo tints (linear-ish hex) and frame/hall palette. */
+  lightSquare: number; darkSquare: number; frame: number; trimEmberhold: number; trimRime: number;
+  /** Optional overrides consumed by render code; unknown keys ignored. */
+  [extra: string]: unknown;
+}
+export interface PieceSet {
+  id: string;
+  name: string;
+  /** URL prefix for GLBs; files are `${base}${assetId}.glb` / `${assetId}_fragments.glb`. */
+  base: string;
+}
+
 /** Fine-grained graphics options (settings → Graphics). Quality presets fill these; any edit makes preset 'custom'. */
 export interface GraphicsSettings {
   preset: QualityTier | 'custom';
@@ -57,7 +88,13 @@ export interface Settings {
   sfxVolume: number; // 0–1
   colorBlind: boolean;
   showMoveList: boolean;
+  /** @deprecated kept for migration; use aiElo. */
   aiLevel: AiLevel;
+  /** Computer strength, AI_ELO_MIN..AI_ELO_MAX. */
+  aiElo: number;
+  contrast: ContrastMode;
+  themeId: string;
+  pieceSetId: string;
   /** Human side in vs-AI mode. */
   playerSide: Side;
   /** First-launch tutorial already offered/completed. */
@@ -70,7 +107,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   cameraMode: 'follow', captureMode: 'full', animSpeed: 1, quality: 'auto', graphics: { ...GRAPHICS_PRESETS.medium },
   musicEnabled: true, musicVolume: 0.55, sfxVolume: 0.8, colorBlind: false,
-  showMoveList: true, aiLevel: 'medium', playerSide: 'w', tutorialSeen: false, highlightStyle: 'glow', highlightIntensity: 0.8,
+  showMoveList: true, aiLevel: 'medium', aiElo: 1200, contrast: 'standard', themeId: 'forge-frost', pieceSetId: 'forge-frost', playerSide: 'w', tutorialSeen: false, highlightStyle: 'glow', highlightIntensity: 0.8,
 };
 
 export interface SettingsStore {
@@ -299,7 +336,8 @@ export type SfxName =
   | `move:step:${Faction}` | `attack:whoosh:${Role}` | `impact:${Faction}` | `shatter:${Faction}`
   | `summon:${Faction}` | `spell:${Faction}` | 'check' | 'mate' | 'ui:click' | 'ui:select' | 'castle' | 'promote'
   | `clash:${Faction}` | `drop:${Faction}` | `debris:${Faction}` | `taunt:${Faction}` | 'kneel'
-  | 'ui:book' | 'ui:page' | 'ui:knob' | 'ui:switch' | 'ui:button' | 'ui:hover' | 'ui:back' | 'loading:done';
+  | 'ui:book' | 'ui:page' | 'ui:knob' | 'ui:switch' | 'ui:button' | 'ui:hover' | 'ui:back' | 'loading:done'
+  | `slide:${Faction}` | `shield:flash:${Faction}` | `shield:break:${Faction}` | `armour:hit:${Faction}` | `land:${Faction}`;
 
 export interface AudioBus {
   /** Must be called from a user gesture (autoplay policy). */
@@ -319,7 +357,8 @@ export interface AiMove { from: Square; to: Square; promotion?: PromotionRole }
 
 export interface AiPlayer {
   init(): Promise<void>;
-  getMove(fen: string, level: AiLevel): Promise<AiMove>;
+  /** level: Elo number (preferred) or legacy named level. */
+  getMove(fen: string, level: number | AiLevel): Promise<AiMove>;
   /** Abort a pending search (new game / undo); pending promise rejects with 'cancelled'. */
   cancel(): void;
   newGame(): void;

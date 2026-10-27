@@ -3,6 +3,10 @@ import { Chess } from 'chess.js';
 import type { AiLevel, AiMove, AiPlayer } from '../../contracts';
 import { fallbackMove, randomMove, toAiMove } from './fallback';
 
+// TEMP (lead, contract v1.4): map an Elo number onto the legacy levels until the elo agent rewrites this module.
+const toLevel = (l: number | AiLevel): AiLevel =>
+  typeof l !== 'number' ? l : l < 900 ? 'easy' : l < 1500 ? 'medium' : l < 2200 ? 'hard' : 'master';
+
 const ENGINE_FILE = 'stockfish-19-lite-single';
 const INIT_TIMEOUT_MS = 8000;
 const MIN_RESPONSE_MS = 600;
@@ -166,7 +170,7 @@ export function createAiPlayer(): AiPlayer {
       const gen = generation;
       const job = queue.then(() => new Promise<AiMove>((resolve, reject) => {
         rejectPending = reject;
-        run(fen, level, gen).then(resolve, reject);
+        run(fen, toLevel(level), gen).then(resolve, reject);
       }));
       queue = job.catch(() => undefined);
       // A cancel while queued rejects when its turn comes (gen mismatch).

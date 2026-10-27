@@ -32,7 +32,8 @@ BASE_SOCKETS = ("socket_weapon_R", "socket_impact", "socket_head")
 EXTRAS_KEYS = ("faction", "role", "displayName", "impactTime", "strikeRange", "attackStyle", "contractVersion")
 ATTACK_STYLES = ("melee", "leap", "ranged", "slam", "summon")
 HEIGHTS = {"pawn": 1.05, "rook": 1.20, "knight": 1.30, "bishop": 1.40, "queen": 1.55, "king": 1.70}
-LOD0_BUDGET = {"pawn": 15000, "rook": 18000, "bishop": 22000, "queen": 30000, "king": 30000, "knight": 35000}
+# v1.4: +30% — LOD0 is shown only in capture close-ups / inspector; LOD1 is the board mesh.
+LOD0_BUDGET = {"pawn": 19500, "rook": 23400, "bishop": 28600, "queen": 39000, "king": 39000, "knight": 45500}
 LOD1_BUDGET = {"pawn": 4000, "rook": 5000, "bishop": 6000, "queen": 8000, "king": 8000, "knight": 9000}
 BLOCKOUT_TRI_CAP = 60000
 FRAGMENT_TRI_BUDGET = 6000
