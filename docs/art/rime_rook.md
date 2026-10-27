@@ -1,8 +1,9 @@
 # rime_rook - Rime Glacier Bastion
 
 ## 1. Identity
-- **Name**: Rime Glacier Bastion. **Concept**: a leaning tower of five uneven glacial ice monoliths lashed in silver wire around a black obsidian core, crowned with a splay of tilted ice shards.
-- **Signature shape**: the crown of tilted ice shards (nine, tallest 0.20, splayed 20-35 deg outward, ~15% oversize) on a tower that tapers upward and leans 3 deg toward -X. Silhouette = narrow tapering stack with a jagged fan top; no flat parapet.
+- **Name**: Rime Glacier Bastion. **Concept**: a leaning tower of uneven glacial ice monoliths lashed in silver wire around a black obsidian core, flaring at the top into an obsidian collar that carries **five ice monoliths cut into merlons**, a cold light burning in the crenels.
+- **Identity cue (the crenellated top)**: **5 blocky ice merlons** (each 0.20 wide x 0.075 deep x 0.14 tall, top y 1.15-1.20 hand-cut uneven, flat bevelled tops, frost caps) on a flared obsidian collar r 0.334 (**0.67 wide against a 0.40 shaft top**); crenel gaps 0.15 wide x 0.14 deep, one centred on the front; the glow orb shows between them. The old fan of spiked shards is gone: merlons are blocks with flat tops, never spikes.
+- Silhouette: narrow tapering stack with a mushroom flare and five tooth-shaped blocks; leans 2 deg toward -X (was 3 deg). The ice walls keep their jagged chips at the shaft only.
 - Non-humanoid: bones `root, body, top`. Scale keys allowed on `body`/`top`.
 
 ## 2. Dimensions (total 1.20)
@@ -15,14 +16,18 @@
 | Monolith 3 | 0.64-0.86 | hex r 0.23, rot -12, offset (-0.02,0,0.02) |
 | Monolith 4 | 0.84-1.00 | hex r 0.20, rot 25 |
 | Obsidian core (visible gaps) | 0.22-1.04 | r 0.17 -> 0.12 |
-| Crown shards | 1.00-1.20 | tips at 1.20 |
-Envelope: 0.60 x 0.62 (hex corners), crown splay within r 0.26.
+| Crown collar (flared obsidian) | 0.960-1.048 | r 0.15 -> 0.334 |
+| Merlon monoliths x5 | 1.040-1.150..1.200 | tops 1.18 / 1.20 / 1.16 / 1.19 / 1.17 ; crenel gap 0.15 |
+| Core glow orb | 1.025-1.125 | r 0.05, visible through the crenels |
+Envelope: 0.67 wide (collar/merlon Ø0.67) x 0.67 deep; tower body 0.60 at the hex corners.
 
 ## 3. Bone pivots
-root (0,0,0) | body (0,0.22,0) (core, monoliths, buttresses) | top (0,1.00,0) (crown shards, rune halo ring). `top` child of `body`.
+root (0,0,0) | body (0,0.22,0) (core, monoliths, buttresses) | top (0,1.00,0) (collar, merlons, core orb, silver band). `top` is a child of `body`. No humanoid bones, no `weapon` bone (Surrender is a slump, see section 7).
+Binding: parts 1-19, 25, 27 -> `body`; 20-24, 26 -> `top`. The merlon ring is rigid with `top` (it may tilt, scale sy, rotate ry; crenel gaps never deform).
 
 ## 4. Part list
 Pedestal parts per README section 2.
+**Part numbers are stable ids; gaps = removed parts.** Bone column: see section 3. Rows 20-24, 26 replace the old splayed shard crown.
 
 | # | Part | Prim | Key numbers | Material | Bone |
 |---|---|---|---|---|---|
@@ -45,78 +50,96 @@ Pedestal parts per README section 2.
 | 17 | buttress shards x5 | C | bases ring r 0.30 at y 0.24, angles 20/95/170/245/310 deg; each n=2-3, len 0.14-0.28, r 0.025-0.04, tilt 25 outward | RH_Ice | body |
 | 18 | frost caps | B | top faces of monoliths: thin slabs 0.012 tall, radius = ring - 0.01, rough 0.9, jagged edge | RH_Frost | body |
 | 19 | frost drips x10 | C | small icicles hanging from underside of each overhang (len 0.03-0.07, r 0.006-0.01) | RH_Ice | body |
-| 20 | crown socket ring | L | sides=12, `(0.100,0.995)(0.150,1.000)(0.150,1.030)(0.110,1.040)` | RH_Silver | top |
-| 21 | crown shards (tall) **S** | C | base ring r 0.10 at y 1.02, n=5 at 0/72/144/216/288 deg ; len 0.14,0.17,0.19,0.20,0.16 ; r 0.026-0.038 ; tilt out 18-30 deg ; central tallest tip y 1.20 | RH_Ice | top |
-| 22 | crown shards (short) | C | n=4 between the tall ones at r 0.15, len 0.08-0.11, r 0.018-0.026, tilt 35 | RH_Ice | top |
-| 23 | crown core glow orb **F2** | B | c=(0,1.06,0) s=(0.06,0.06,0.06) e=2 | RH_Glow x3 | top |
+| 20 | **crown collar (flared obsidian) S** | L | sides=10 faceted, `(0.150,0.960)(0.230,0.985)(0.300,1.005)(0.334,1.030)(0.334,1.045)(0.290,1.048)(0.150,1.045)` ; 5 under-bracket icicles C n=1 len 0.06 pointing down at the merlon angles | RH_Obsidian / RH_Ice | top |
+| 21 | **ice merlons x5 S** | ring-sector extrusion | centres at angles 36 + 72k deg (crenel centred on the front) ; each r 0.26-0.334, tangential width 0.20 at r 0.30 (angular 38 deg), crenel gap 0.15 ; base y 1.040, tops y 1.18 / 1.20 / 1.16 / 1.19 / 1.17 (k=0..4) ; flat top with chamfer 0.012 and one diagonal chip 0.03 ; outward tilt 4 deg, yaw jitter +-6 deg ; frosted ice (transmission 0.5) | RH_Ice | top |
+| 22 | merlon frost caps + edge wire | B + S | caps 0.012 thick on every merlon top (bright, value >= 0.85) ; silver edge wire r 0.004 along the top edges | RH_Frost / RH_Silver | top |
+| 23 | crown core glow orb **F2** | B | c=(0,1.075,0) s=(0.10,0.10,0.10) e=2 (visible through the crenels) | RH_Glow x4 | top |
 | 24 | crown shard fracture lines | texture | cyan faint lines inside shards | RH_Ice cracks | top |
 | 25 | frost mist base ring | texture | white gradient on tier-1 bottom 0.03, alpha mask for VFX hook | RH_Frost | body |
-| 26 | silver band under crown | S | torus r=0.12, tube 0.006 at y 1.012 | RH_Silver | top |
+| 26 | silver band at the collar edge | S | torus r=0.332, tube 0.006 at y 1.034 | RH_Silver | top |
 | 27 | obsidian shard spurs x3 | C | black crystals growing from M3 (n=3 len 0.06-0.10) at the back-left | RH_Obsidian | body |
-(27 parts; budget <= 18k. F1 = core crack; F2 = crown orb, low.)
+(27 parts; budget <= 18k. F1 = core crack; F2 = crown orb. Row 24 (shard fracture lines) now applies to the merlons. Tilt of the whole tower is 2 deg, not 3.)
 
 ## 5. Pose
-Leaning 3 deg toward -X (rz +3 on `body` at rest is baked into geometry, rest pose = 0). Top shards splayed. Monolith offsets create four visible seams where the obsidian core and silver ties show.
+Leaning 2 deg toward -X (rz +2 on `body` baked into geometry, rest pose = 0). The collar and merlons are level (they sit on `top` and do not inherit the lean). Monolith offsets create four visible seams where the obsidian core and silver ties show; the cold orb glows through the front crenel.
 
 ## 6. Sockets and extras
 | Socket | Local pos | Parent |
 |---|---|---|
 | `socket_weapon_R` | (0, 0.30, 0.34) (tower front base, topple contact) | body |
-| `socket_cast` | (0, 1.12, 0) shard launch point | top |
+| `socket_cast` | (0, 1.12, 0) shard launch point (through the front crenel) | top |
 | `socket_impact` | (0, 0.30, 0.40) | body |
-| `socket_head` | (0, 1.22, 0) | top |
+| `socket_head` | (0, 1.24, 0) | top |
 
 Extras: `impactTime 0.75`, `strikeRange 0.10`, `attackStyle slam`, `displayName "Rime Glacier Bastion"`, `contractVersion 1`. (Spike volley is engine VFX at `socket_cast`, fired at t = 0.50 s.)
 
-## 7. Clips
+## 7. Clips (squash-and-stretch beats; conventions in README section 7)
+No limbs: `body` squash/stretch + rock stands in for knee/elbow bends; `top` (the merlon crown) overlaps 0.08 s behind and can scale sx,sz (ring expands, crenel gaps widen) and tilt.
+
 **Idle** (loop 3.0 s) - cold glimmer
-| t | bone | value |
+| t | body | top (collar, merlons, orb) |
 |---|---|---|
-| 0.0 | all | rest |
-| 1.0 | top | rz +1.5, ry +4 (shards drift) ; sy 1.03 |
-| 2.0 | top | rz -1.0, ry -3 |
-| 1.5 | body | rz -0.6 (creak) |
-| 3.0 | all | rest |
+| 0.0 | rest | rest |
+| 1.0 | | rz +1.0, ry +3 (crown drifts on its seat) ; orb pulse +15% |
+| 1.5 | rz -0.6 (creak) | |
+| 2.0 | | rz -0.8, ry -2 |
+| 3.0 | rest | rest |
 
 **Move** (loop 0.8 s) - glide with sway (engine hops/slides)
-| t | bone | value |
+| t | body | top |
 |---|---|---|
-| 0.0 | body | rx +3, y 0 |
-| 0.2 | body | y +0.02, rz -2 (step) ; top rx -5 |
-| 0.4 | body | rx +5, y 0 |
-| 0.6 | body | y +0.02, rz +2 (step) ; top rx -5 |
-| 0.8 | all | = t0 |
+| 0.0 | rx +3, y 0 | |
+| 0.2 | y +0.02, rz -2 (**step**; the tower tips and re-plants) | rx -5 (merlons lag) |
+| 0.4 | rx +5, y 0 | |
+| 0.6 | y +0.02, rz +2 (**step**) | rx -5 |
+| 0.8 | = t0 | = t0 |
 
-**Attack** (1.8 s; impact 0.75)
-| t | bone | value |
+**Attack** (1.8 s; **impact 0.75**)
+| t | body | top |
 |---|---|---|
-| 0.00-0.30 | body | rx -4, sy 0.96 (settle) ; top sy 1.2 (shards flare), rz +4 |
-| 0.30-0.50 | anticipation (io) | top sy 1.35, rx -10 ; body rx -6, y +0.02 |
-| 0.50 | event | volley: top sy 1.35 -> 0.4 in 0.06 s (snap) ; engine fires 3 spikes from socket_cast |
-| 0.50-0.62 | body | rx -10, y +0.04 (tower hangs back) |
-| 0.62-0.75 | **strike** (0.13 s) | body rx -10 -> +48 (topple), z +0.18 ; top rx +30, sy 0.4 -> 0.8 |
-| 0.75 | **impact** | tower laid at 48 deg; socket_impact on target |
-| 0.75-0.95 | hold | body rx +46, sy 0.96 ; frost puff |
-| 0.95-1.80 | recover (io) | body rx -> 0 with overshoot -3 at 1.5 ; top sy 1.0 |
+| 0.00-0.30 | rx -4, sy 0.96 (settle) | sx,sz 1.1, rz +3 (merlons flare apart), orb +40% |
+| 0.30-0.50 (io) | rx -6, y +0.02 | sx,sz 1.2, rx -10 |
+| 0.50 | **event**: volley: top sx,sz 1.2 -> 0.9 in 0.06 s (snap); engine fires 3 spikes from `socket_cast` through the front crenel | |
+| 0.50-0.62 | rx -10, y +0.04 (tower hangs back) | rx -8 |
+| 0.62-0.75 **strike** (0.13 s; body leads 0.04 s) | rx -10 -> +48 (topple), z +0.18 | rx +30, sx,sz 1.0 |
+| 0.75 | **impact**: tower laid at 48 deg; `socket_impact` on target | |
+| 0.75-0.95 hold | rx +46, sy 0.96 ; frost puff | |
+| 0.95-1.80 (io) | rx -> 0 with overshoot -3 at 1.5 | to rest |
 
 **HitReact** (0.4 s)
-| t | bone | value |
+| t | body | top |
 |---|---|---|
-| 0.00 | all | rest |
-| 0.08 | body | rx -9, rz +4, z -0.06 (snap) ; top rx +16, sy 0.9 |
-| 0.40 | body | rx -3, rz +1 ; top rest |
+| 0.08 | rx -9, rz +4, z -0.06 (snap) | rx +16, sy 0.9 |
+| 0.40 | rx -3, rz +1 | rest |
 
-**Victory** (1.5 s)
-| t | bone | value |
+**Victory** (1.5 s, ends held)
+| t | body | top |
 |---|---|---|
-| 0.0 | all | rest |
-| 0.5 | top | sy 1.5 (shards grow), rz 0 ; body y +0.03 |
-| 1.0 | top | ry +20 (slow turn) |
-| 1.5 | hold | top sy 1.3 |
+| 0.0 | rest | rest |
+| 0.5 | y +0.03 | sy 1.15, sx,sz 1.1 (merlons lift), orb +60% |
+| 1.0 | | ry +20 (slow turn) |
+| 1.5 | hold | hold |
+
+**Taunt** (1.2 s, once) - the crown rattles and the orb flares
+| t | body | top |
+|---|---|---|
+| 0.00-0.30 | sy 0.95, y -0.02 (crouch) | sx,sz 1.1 |
+| 0.30-0.45 (snap) | sy 1.06, y +0.02, rx +5 | sy 1.3 ; orb flares x2 ; ry +8 |
+| 0.45-0.90 | rest-ish | rattle: rz +-2 at 14 Hz decaying (merlons chatter on the collar) |
+| 0.90-1.20 (io) | settle | rest |
+
+**Surrender** (2.0 s, once, holds the last pose) - the crown slumps and the light dies
+| t | body | top |
+|---|---|---|
+| 0.00-0.30 | rx -4, sy 0.96 (stagger) | rz +4 |
+| 0.30-1.30 (io) | sink: y -0.05, sy 0.89 ; bow rx +10, z +0.03 | slides forward: rx +14, z +0.03, sx,sz 0.96 (the merlon ring sags to one side); orb fades to 20% |
+| 1.30-2.00 | hold; slow settle (sy 0.88) | hold, frost mist on the floor (engine) |
 
 ## 8. Fragments (30)
-Sharp: 14 elongated monolith shards (aspect 3:1), 8 crown shards (whole tips, intact), 4 obsidian core splinters, 4 silver wire/collar bits. Interior `RH_Interior` pale cracked ice; frost mist VFX on break. Crown tips keep the cyan glow for 0.3 s.
+Sharp: 12 elongated monolith shards (aspect 3:1), **5 merlon blocks break away whole (they keep their frost caps and a cyan edge for 0.3 s)**, 4 obsidian core/collar splinters, 4 silver wire/collar bits. Interior `RH_Interior` pale cracked ice; frost mist VFX on break.
 
 ## 9. Readability
-- vs `emberhold_rook`: narrower (0.60 vs 0.67), taller read (taper + lean), black/blue-white ice with no flat top or horizontal bands; Emberhold is warm, flat-crowned, with forward ram.
-- vs other roles: the only piece with no figure and a hexagonal stacked-offset body; crown splay differs from bishop's single tall point. Tip height 1.20 exactly.
+- **Identity cue**: 5 chunky ice merlons with flat tops and a cold glow between them, on a flared collar wider than the tower.
+- vs `emberhold_rook`: dark obsidian/ice with a cold orb vs warm soot stone with fire in the notches and a forward ram; both have a 0.67-wide crenellated top. Value: Rime merlon tops (frost caps, >= 0.80) are far brighter than the body (<= 0.12), the Emberhold merlons stay mid-value.
+- vs other roles: only piece with five tooth-like blocks around a flared ring and no figure; the hex-stacked offset body also differs from the bishop's single slim peak.
+- Silhouette tests: >= 4 notches (>= 4 px wide, >= 4 px deep) in the top profile over the front 180 deg; top-down = ring with 5 gaps and a glowing centre.
