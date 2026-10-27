@@ -1,7 +1,8 @@
 // Audio bus: WebAudio SFX (procedural) + looping music element routed through a gain node.
-import type { AudioBus, EventBus, SfxName } from '../contracts';
+import type { AudioBus, EventBus, Faction, Role, SfxName } from '../contracts';
 import { SIDE_FACTION } from '../contracts';
 import { createSfx, type SfxPlayer } from './sfx';
+import { createSamplePlayer, preloadSfx, type PlayOpts, type SamplePlayer } from './samples';
 import { createScore, type Score } from './score';
 
 const DB_NAME = 'battle-chess';
@@ -56,6 +57,7 @@ export function createAudioBus(): AudioBus {
   let sfxOut: GainNode | null = null;
   let musicGain: GainNode | null = null;
   let sfxPlayer: SfxPlayer | null = null;
+  let samples: SamplePlayer | null = null;
   let el: HTMLAudioElement | null = null;
   let objectUrl: string | null = null;
   let hasTrack = false;
@@ -140,6 +142,14 @@ export function createAudioBus(): AudioBus {
     window.addEventListener('bc:app-resume', () => onVisibility(false));
   }
 
+  /** Sample first (designed CC0 layers); procedural synth only if the file is missing or still decoding. */
+  function play(key: string, fallback: SfxName | null, opts?: PlayOpts): void {
+    if (samples?.play(key, opts)) return;
+    if (fallback) sfxPlayer?.play(fallback, opts);
+  }
+  const SHATTER_TIER: Record<Role, string> = { pawn: ':light', knight: '', bishop: '', rook: ':heavy', queen: ':heavy', king: ':heavy' };
+  const HEAVY: ReadonlySet<Role> = new Set<Role>(['rook', 'queen', 'king']);
+
   const bus: AudioBus = {
     async unlock() {
       if (!unlocked) {
@@ -155,6 +165,7 @@ export function createAudioBus(): AudioBus {
         musicGain.gain.value = 0;
         musicGain.connect(comp);
         sfxPlayer = createSfx(ctx, sfxOut);
+        samples = createSamplePlayer(ctx, sfxOut);
         score = createScore(ctx, musicGain);
         sourceReady = resolveSource();
       }
@@ -164,7 +175,7 @@ export function createAudioBus(): AudioBus {
     },
 
     sfx(name: SfxName, opts) {
-      sfxPlayer?.play(name, opts);
+      play(name, name, opts);
     },
 
     setMusicEnabled(on) {
@@ -193,26 +204,46 @@ export function createAudioBus(): AudioBus {
     },
 
     attach(eb: EventBus) {
-      eb.on('move:step', (e) => bus.sfx(`move:step:${e.faction}`));
-      eb.on('attack:whoosh', (e) => bus.sfx(`attack:whoosh:${e.role}`));
+      eb.on('move:step', (e) => {
+        const key = e.role === 'knight' ? `step:knight:${e.faction}` : HEAVY.has(e.role) ? `step:heavy:${e.faction}` : `move:step:${e.faction}`;
+        play(key, `move:step:${e.faction}`);
+      });
+      eb.on('attack:whoosh', (e) => play(`attack:whoosh:${e.role}${e.faction === 'rime' ? ':rime' : ''}`, `attack:whoosh:${e.role}`));
       const unduck = () => { if (duckTimer) clearTimeout(duckTimer); duckTimer = null; duck = 1; fadeTo(musicTarget(), 0.9); };
-      eb.on('capture:begin', () => { duck = DUCK; fadeTo(musicTarget(), 0.4); if (duckTimer) clearTimeout(duckTimer); duckTimer = setTimeout(unduck, 25000); });
+      eb.on('capture:begin', (e) => {
+        duck = DUCK; fadeTo(musicTarget(), 0.4); if (duckTimer) clearTimeout(duckTimer); duckTimer = setTimeout(unduck, 25000);
+        // Decode the hit + shatter now (seconds ahead of the blow) so they never fall back to the synth.
+        const df = e.defenderFaction;
+        samples?.warm([`hit:${e.attacker}:${e.attackerFaction}`, `shatter:${df}${SHATTER_TIER[e.defender]}`, `attack:whoosh:${e.attacker}${e.attackerFaction === 'rime' ? ':rime' : ''}`]);
+        if (e.attacker === 'knight') play(`gallop:${e.attackerFaction}`, null, { delay: 0.15, volume: 0.9 });
+      });
       eb.on('capture:end', unduck);
-      eb.on('game:start', unduck);
-      eb.on('capture:impact', (e) => bus.sfx(`impact:${e.defenderFaction}`, { volume: e.heavy ? 1 : 0.75 }));
-      eb.on('capture:shatter', (e) => bus.sfx(`shatter:${e.defenderFaction}`));
+      eb.on('game:start', () => { unduck(); samples?.warm(['check', 'mate', 'castle', 'promote:emberhold', 'promote:rime', 'kneel']); });
+      eb.on('capture:impact', (e) => play(`hit:${e.attacker}:${e.attackerFaction}`, `impact:${e.defenderFaction}`, { volume: e.heavy ? 1 : 0.8 }));
+      eb.on('capture:shatter', (e) => play(`shatter:${e.defenderFaction}${SHATTER_TIER[e.defender]}`, `shatter:${e.defenderFaction}`));
       eb.on('summon', (e) => bus.sfx(`summon:${e.faction}`));
       eb.on('spell', (e) => bus.sfx(`spell:${e.faction}`));
       eb.on('castle', () => bus.sfx('castle'));
-      eb.on('promotion', (e) => bus.sfx('promote', { pitch: SIDE_FACTION[e.side] === 'rime' ? 1.12 : 1 }));
+      eb.on('promotion', (e) => { const f: Faction = SIDE_FACTION[e.side]; play(`promote:${f}`, 'promote', { pitch: f === 'rime' ? 1.12 : 1 }); });
       eb.on('check', () => bus.sfx('check'));
       eb.on('game:over', (e) => { if (e.reason === 'checkmate') bus.sfx('mate'); });
       eb.on('ui:select', () => bus.sfx('ui:select'));
       eb.on('ui:click', () => bus.sfx('ui:click'));
+      // Combat flavour events (emitted by cinematics/fx); silent on the synth fallback.
+      eb.on('clash', (e) => play(`clash:${e.attackerFaction}${e.heavy ? ':heavy' : ''}`, `impact:${e.attackerFaction}`, { volume: e.heavy ? 1 : 0.9 }));
+      eb.on('weapon:drop', (e) => play(`drop:${e.faction}`, null));
+      eb.on('debris:impact', (e) => {
+        const tier = e.strength < 0.34 ? 1 : e.strength < 0.67 ? 2 : 3;
+        play(`debris:${e.faction}:s${tier}`, null, { volume: 0.7 + 0.3 * Math.min(1, Math.max(0, e.strength)) });
+      });
+      eb.on('taunt', (e) => play(e.role === 'knight' ? `rear:${e.faction}` : `taunt:${e.faction}`, null));
+      eb.on('surrender', () => play('kneel', null));
     },
   };
   // Diagnostics for sandbox/tests (not part of the AudioBus contract).
   Object.assign(bus, {
+    /** Fetch + decode critical SFX during the loading screen (works before unlock). */
+    preload: (report?: (fraction: number) => void) => preloadSfx(report),
     debug: () => ({
       kind: hasTrack ? 'file' : 'score', state: ctx?.state, paused: el?.paused, loop: el?.loop, currentTime: el?.currentTime ?? 0,
       scoreRunning: score?.running ?? false, ctxTime: ctx?.currentTime ?? 0, gain: musicGain?.gain.value ?? 0, duck, hidden,
@@ -220,3 +251,5 @@ export function createAudioBus(): AudioBus {
   });
   return bus;
 }
+
+export { preloadSfx } from './samples';

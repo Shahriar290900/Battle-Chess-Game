@@ -1,0 +1,690 @@
+{
+ "version": 1,
+ "entries": {
+  "attack:whoosh:bishop": {
+   "files": [
+    "attack_whoosh_bishop__0.mp3",
+    "attack_whoosh_bishop__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:bishop:rime": {
+   "files": [
+    "attack_whoosh_bishop_rime__0.mp3",
+    "attack_whoosh_bishop_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:king": {
+   "files": [
+    "attack_whoosh_king__0.mp3",
+    "attack_whoosh_king__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:king:rime": {
+   "files": [
+    "attack_whoosh_king_rime__0.mp3",
+    "attack_whoosh_king_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:knight": {
+   "files": [
+    "attack_whoosh_knight__0.mp3",
+    "attack_whoosh_knight__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:knight:rime": {
+   "files": [
+    "attack_whoosh_knight_rime__0.mp3",
+    "attack_whoosh_knight_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:pawn": {
+   "files": [
+    "attack_whoosh_pawn__0.mp3",
+    "attack_whoosh_pawn__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:pawn:rime": {
+   "files": [
+    "attack_whoosh_pawn_rime__0.mp3",
+    "attack_whoosh_pawn_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:queen": {
+   "files": [
+    "attack_whoosh_queen__0.mp3",
+    "attack_whoosh_queen__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:queen:rime": {
+   "files": [
+    "attack_whoosh_queen_rime__0.mp3",
+    "attack_whoosh_queen_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:rook": {
+   "files": [
+    "attack_whoosh_rook__0.mp3",
+    "attack_whoosh_rook__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "attack:whoosh:rook:rime": {
+   "files": [
+    "attack_whoosh_rook_rime__0.mp3",
+    "attack_whoosh_rook_rime__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "preload": true
+  },
+  "castle": {
+   "files": [
+    "castle__0.mp3",
+    "castle__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "check": {
+   "files": [
+    "check__0.mp3",
+    "check__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "clash:emberhold": {
+   "files": [
+    "clash_emberhold__0.mp3",
+    "clash_emberhold__1.mp3",
+    "clash_emberhold__2.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "preload": true
+  },
+  "clash:emberhold:heavy": {
+   "files": [
+    "clash_emberhold_heavy__0.mp3",
+    "clash_emberhold_heavy__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "clash:rime": {
+   "files": [
+    "clash_rime__0.mp3",
+    "clash_rime__1.mp3",
+    "clash_rime__2.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "preload": true
+  },
+  "clash:rime:heavy": {
+   "files": [
+    "clash_rime_heavy__0.mp3",
+    "clash_rime_heavy__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "debris:emberhold": {
+   "files": [
+    "debris_emberhold_s2__0.mp3",
+    "debris_emberhold_s2__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:emberhold:s1": {
+   "files": [
+    "debris_emberhold_s1__0.mp3",
+    "debris_emberhold_s1__1.mp3"
+   ],
+   "gain": 0.45,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:emberhold:s2": {
+   "files": [
+    "debris_emberhold_s2__0.mp3",
+    "debris_emberhold_s2__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:emberhold:s3": {
+   "files": [
+    "debris_emberhold_s3__0.mp3",
+    "debris_emberhold_s3__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:rime": {
+   "files": [
+    "debris_rime_s2__0.mp3",
+    "debris_rime_s2__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:rime:s1": {
+   "files": [
+    "debris_rime_s1__0.mp3",
+    "debris_rime_s1__1.mp3"
+   ],
+   "gain": 0.45,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:rime:s2": {
+   "files": [
+    "debris_rime_s2__0.mp3",
+    "debris_rime_s2__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "debris:rime:s3": {
+   "files": [
+    "debris_rime_s3__0.mp3",
+    "debris_rime_s3__1.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 1,
+   "cooldown": 0.09
+  },
+  "drop:emberhold": {
+   "files": [
+    "drop_emberhold__0.mp3",
+    "drop_emberhold__1.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 3
+  },
+  "drop:rime": {
+   "files": [
+    "drop_rime__0.mp3",
+    "drop_rime__1.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 3
+  },
+  "gallop:emberhold": {
+   "files": [
+    "gallop_emberhold__0.mp3",
+    "gallop_emberhold__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2
+  },
+  "gallop:rime": {
+   "files": [
+    "gallop_rime__0.mp3",
+    "gallop_rime__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2
+  },
+  "hit:bishop:emberhold": {
+   "files": [
+    "hit_bishop_emberhold__0.mp3",
+    "hit_bishop_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:bishop:rime": {
+   "files": [
+    "hit_bishop_rime__0.mp3",
+    "hit_bishop_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:king:emberhold": {
+   "files": [
+    "hit_king_emberhold__0.mp3",
+    "hit_king_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:king:rime": {
+   "files": [
+    "hit_king_rime__0.mp3",
+    "hit_king_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:knight:emberhold": {
+   "files": [
+    "hit_knight_emberhold__0.mp3",
+    "hit_knight_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:knight:rime": {
+   "files": [
+    "hit_knight_rime__0.mp3",
+    "hit_knight_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:pawn:emberhold": {
+   "files": [
+    "hit_pawn_emberhold__0.mp3",
+    "hit_pawn_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3,
+   "preload": true
+  },
+  "hit:pawn:rime": {
+   "files": [
+    "hit_pawn_rime__0.mp3",
+    "hit_pawn_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3,
+   "preload": true
+  },
+  "hit:queen:emberhold": {
+   "files": [
+    "hit_queen_emberhold__0.mp3",
+    "hit_queen_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:queen:rime": {
+   "files": [
+    "hit_queen_rime__0.mp3",
+    "hit_queen_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:rook:emberhold": {
+   "files": [
+    "hit_rook_emberhold__0.mp3",
+    "hit_rook_emberhold__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "hit:rook:rime": {
+   "files": [
+    "hit_rook_rime__0.mp3",
+    "hit_rook_rime__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "impact:emberhold": {
+   "files": [
+    "impact_emberhold__0.mp3",
+    "impact_emberhold__1.mp3",
+    "impact_emberhold__2.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3,
+   "preload": true
+  },
+  "impact:rime": {
+   "files": [
+    "impact_rime__0.mp3",
+    "impact_rime__1.mp3",
+    "impact_rime__2.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3,
+   "preload": true
+  },
+  "kneel": {
+   "files": [
+    "kneel__0.mp3",
+    "kneel__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2
+  },
+  "loading:done": {
+   "files": [
+    "loading_done__0.mp3"
+   ],
+   "gain": 0.7,
+   "priority": 2
+  },
+  "mate": {
+   "files": [
+    "mate__0.mp3",
+    "mate__1.mp3"
+   ],
+   "gain": 1,
+   "priority": 3
+  },
+  "move:step:emberhold": {
+   "files": [
+    "move_step_emberhold__0.mp3",
+    "move_step_emberhold__1.mp3",
+    "move_step_emberhold__2.mp3"
+   ],
+   "gain": 0.55,
+   "priority": 1,
+   "preload": true,
+   "cooldown": 0.08
+  },
+  "move:step:rime": {
+   "files": [
+    "move_step_rime__0.mp3",
+    "move_step_rime__1.mp3",
+    "move_step_rime__2.mp3"
+   ],
+   "gain": 0.55,
+   "priority": 1,
+   "preload": true,
+   "cooldown": 0.08
+  },
+  "promote": {
+   "files": [
+    "promote_emberhold__0.mp3",
+    "promote_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "promote:emberhold": {
+   "files": [
+    "promote_emberhold__0.mp3",
+    "promote_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "promote:rime": {
+   "files": [
+    "promote_rime__0.mp3",
+    "promote_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "rear:emberhold": {
+   "files": [
+    "rear_emberhold__0.mp3",
+    "rear_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "rear:rime": {
+   "files": [
+    "rear_rime__0.mp3",
+    "rear_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "shatter:emberhold": {
+   "files": [
+    "shatter_emberhold__0.mp3",
+    "shatter_emberhold__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3,
+   "preload": true
+  },
+  "shatter:emberhold:heavy": {
+   "files": [
+    "shatter_emberhold_heavy__0.mp3",
+    "shatter_emberhold_heavy__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "shatter:emberhold:light": {
+   "files": [
+    "shatter_emberhold_light__0.mp3",
+    "shatter_emberhold_light__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "shatter:rime": {
+   "files": [
+    "shatter_rime__0.mp3",
+    "shatter_rime__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3,
+   "preload": true
+  },
+  "shatter:rime:heavy": {
+   "files": [
+    "shatter_rime_heavy__0.mp3",
+    "shatter_rime_heavy__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "shatter:rime:light": {
+   "files": [
+    "shatter_rime_light__0.mp3",
+    "shatter_rime_light__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 3
+  },
+  "spell:emberhold": {
+   "files": [
+    "spell_emberhold__0.mp3",
+    "spell_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "spell:rime": {
+   "files": [
+    "spell_rime__0.mp3",
+    "spell_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "step:heavy:emberhold": {
+   "files": [
+    "step_heavy_emberhold__0.mp3",
+    "step_heavy_emberhold__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "preload": true
+  },
+  "step:heavy:rime": {
+   "files": [
+    "step_heavy_rime__0.mp3",
+    "step_heavy_rime__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "preload": true
+  },
+  "step:knight:emberhold": {
+   "files": [
+    "step_knight_emberhold__0.mp3",
+    "step_knight_emberhold__1.mp3",
+    "step_knight_emberhold__2.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "preload": true
+  },
+  "step:knight:rime": {
+   "files": [
+    "step_knight_rime__0.mp3",
+    "step_knight_rime__1.mp3",
+    "step_knight_rime__2.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 1,
+   "preload": true
+  },
+  "summon:emberhold": {
+   "files": [
+    "summon_emberhold__0.mp3",
+    "summon_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "summon:rime": {
+   "files": [
+    "summon_rime__0.mp3",
+    "summon_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "taunt:emberhold": {
+   "files": [
+    "taunt_emberhold__0.mp3",
+    "taunt_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "taunt:rime": {
+   "files": [
+    "taunt_rime__0.mp3",
+    "taunt_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2
+  },
+  "ui:back": {
+   "files": [
+    "ui_back__0.mp3",
+    "ui_back__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:book": {
+   "files": [
+    "ui_book__0.mp3",
+    "ui_book__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:button": {
+   "files": [
+    "ui_button__0.mp3",
+    "ui_button__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:click": {
+   "files": [
+    "ui_click__0.mp3",
+    "ui_click__1.mp3",
+    "ui_click__2.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:hover": {
+   "files": [
+    "ui_hover__0.mp3",
+    "ui_hover__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:knob": {
+   "files": [
+    "ui_knob__0.mp3",
+    "ui_knob__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:page": {
+   "files": [
+    "ui_page__0.mp3",
+    "ui_page__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:select": {
+   "files": [
+    "ui_select__0.mp3",
+    "ui_select__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  },
+  "ui:switch": {
+   "files": [
+    "ui_switch__0.mp3",
+    "ui_switch__1.mp3"
+   ],
+   "gain": 0.5,
+   "priority": 1,
+   "preload": true
+  }
+ }
+}

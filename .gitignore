@@ -16,3 +16,5 @@ tools/forge/__pycache__/
 docs/qa/tmp/
 sandbox/**/*.png
 tests/e2e/__screens__/
+tools/audio/raw/
+tools/audio/work/

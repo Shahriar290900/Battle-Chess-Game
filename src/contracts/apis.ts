@@ -299,7 +299,7 @@ export type SfxName =
   | `move:step:${Faction}` | `attack:whoosh:${Role}` | `impact:${Faction}` | `shatter:${Faction}`
   | `summon:${Faction}` | `spell:${Faction}` | 'check' | 'mate' | 'ui:click' | 'ui:select' | 'castle' | 'promote'
   | `clash:${Faction}` | `drop:${Faction}` | `debris:${Faction}` | `taunt:${Faction}` | 'kneel'
-  | 'ui:book' | 'ui:page' | 'ui:knob' | 'ui:switch' | 'ui:button' | 'loading:done';
+  | 'ui:book' | 'ui:page' | 'ui:knob' | 'ui:switch' | 'ui:button' | 'ui:hover' | 'ui:back' | 'loading:done';
 
 export interface AudioBus {
   /** Must be called from a user gesture (autoplay policy). */

@@ -15,7 +15,7 @@ import {
 import { createAssetRegistry, type AssetRegistryImpl } from './assets/registry';
 import { createCameraRig } from './camera/cameraRig';
 import * as cinematics from './cinematics';
-import { createAudioBus } from './audio';
+import { createAudioBus, preloadSfx } from './audio';
 import { createAiPlayer } from './core/ai';
 import { createGameController, type GameController } from './core/game';
 import { createLivePresenter } from './core/livePresenter';
@@ -217,7 +217,8 @@ async function boot(): Promise<void> {
       report(1);
     });
     await tracker.run(4, async () => { await ai.init().catch((e) => console.warn('[ai] init failed (fallback engine will be used)', e)); });
-    await tracker.run(5, async () => { syncAudio(); }); // audio decode starts on the first gesture (autoplay policy)
+    // Music starts on the first gesture (autoplay policy); combat SFX decode now so the first capture has sound.
+    await tracker.run(5, async (report) => { syncAudio(); await preloadSfx(report).catch((e) => console.warn('[audio] sfx preload failed (synth fallback)', e)); });
 
     // ---- attract mode (launch flyover behind the menu) and the Learn area: optional modules, feature-checked
     const createAttract = (cinematics as unknown as { createAttract?: (c: AttractContext) => AttractMode }).createAttract;
