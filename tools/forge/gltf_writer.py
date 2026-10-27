@@ -208,7 +208,7 @@ class GlbBuilder:
         self.g.setdefault("skins", []).append(s)
         return len(self.g["skins"]) - 1
 
-    def animation(self, name: str, channels: list[dict]) -> int:
+    def animation(self, name: str, channels: list[dict], extras: dict | None = None) -> int:
         """channels: dicts {node, path ('translation'|'rotation'|'scale'), times (n,), values (n,3|4),
         interpolation ('LINEAR'|'STEP')}."""
         samplers, chans = [], []
@@ -219,7 +219,10 @@ class GlbBuilder:
                              "output": self.accessor(v, "VEC4" if ch["path"] == "rotation" else "VEC3"),
                              "interpolation": ch.get("interpolation", "LINEAR")})
             chans.append({"sampler": len(samplers) - 1, "target": {"node": ch["node"], "path": ch["path"]}})
-        self.g.setdefault("animations", []).append({"name": name, "samplers": samplers, "channels": chans})
+        anim = {"name": name, "samplers": samplers, "channels": chans}
+        if extras:
+            anim["extras"] = extras
+        self.g.setdefault("animations", []).append(anim)
         return len(self.g["animations"]) - 1
 
     def scene(self, roots: list[int]):

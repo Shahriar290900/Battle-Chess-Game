@@ -40,13 +40,24 @@ class Rig:
         self.bones: dict[str, Bone] = {}
         self.sockets: dict[str, tuple[str, np.ndarray]] = {}
         self.nodes: dict[str, tuple[str, np.ndarray]] = {}    # non-skinned mesh nodes (e.g. weapon_summon): name -> (parent bone, abs pos)
+        self.alias: dict[str, str] = {}                       # semantic name -> contract bone (e.g. forearm_L -> hand_L)
 
     def add(self, name, parent, pos):
+        parent = self.resolve(parent) if parent else parent
         assert parent is None or parent in self.bones, f"parent {parent!r} must be added before {name!r}"
         self.bones[name] = Bone(name, parent, np.asarray(pos, dtype=np.float64))
         return name
 
+    def add_alias(self, alias, bone):
+        """Let authoring code use a semantic name (`forearm_L`) for a contract bone (`hand_L`). Aliases are not exported."""
+        assert bone in self.bones, bone
+        self.alias[alias] = bone
+
+    def resolve(self, name):
+        return self.alias.get(name, name)
+
     def socket(self, name, bone, pos):
+        bone = self.resolve(bone)
         assert bone in self.bones
         self.sockets[name] = (bone, np.asarray(pos, dtype=np.float64))
 
@@ -61,14 +72,14 @@ class Rig:
         return list(self.bones)
 
     def index(self, name):
-        return self.order.index(name)
+        return self.order.index(self.resolve(name))
 
     def local(self, name):
-        b = self.bones[name]
+        b = self.bones[self.resolve(name)]
         return b.pos if b.parent is None else b.pos - self.bones[b.parent].pos
 
     def pos(self, name):
-        return self.bones[name].pos.copy()
+        return self.bones[self.resolve(name)].pos.copy()
 
 
 # ------------------------------------------------------------------ easing
@@ -157,6 +168,8 @@ class Clip:
     def __init__(self, name, duration, loop=False, fps=30):
         self.name, self.duration, self.loop, self.fps = name, float(duration), loop, fps
         self.tracks: dict[tuple[str, str], Track] = {}
+        self.dense: dict[tuple[str, str], tuple] = {}     # (bone, 'rot'|'pos') -> (times, values) baked by anim.Animator (rot = quaternions xyzw, pos = delta metres)
+        self.extras: dict = {}                            # written to the glTF animation's extras (e.g. footContacts)
 
     def _track(self, bone, path, step=False):
         k = (bone, path)
@@ -202,11 +215,21 @@ class Clip:
                     tr.keys.append((self.duration, first[1].copy(), "in_out_cubic"))
         return self
 
+    def set_dense(self, bone, path, times, values):
+        """Install pre-sampled LINEAR keys: path 'rot' -> quaternions (n,4) xyzw, 'pos' -> delta from the rest local translation (n,3)."""
+        self.dense[(bone, path)] = (np.asarray(times, dtype=np.float64), np.asarray(values, dtype=np.float64))
+        return self
+
     def bake(self, rig: Rig):
         """-> list of channel dicts {bone, path('translation'|'rotation'|'scale'), times, values, interpolation}."""
         out = []
         n = max(2, int(math.ceil(self.duration * self.fps)) + 1)
         grid = np.linspace(0, self.duration, n)
+        for (bone, path), (dt_, dv_) in self.dense.items():
+            if path == "rot":
+                out.append({"bone": bone, "path": "rotation", "times": dt_, "values": dv_, "interpolation": "LINEAR"})
+            else:
+                out.append({"bone": bone, "path": "translation", "times": dt_, "values": rig.local(bone) + dv_, "interpolation": "LINEAR"})
         for (bone, path), tr in self.tracks.items():
             if tr.step:
                 ts = sorted({k[0] for k in tr.keys} | {0.0})

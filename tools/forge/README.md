@@ -23,7 +23,8 @@ server, renders everything, then closes both. Do not run several at once (8 GB m
 |---|---|
 | `geom.py` | Mesh class + primitives (lathe, tube/sweep, extrude, plate, loft, superellipsoid, torus, blade, crystals, cloth), noise, bend/warp, instances, QEM decimation |
 | `textures.py` | tileable PBR sets (`get_texture_set(name)`), material registry, per-vertex AO + edge-wear bake |
-| `rig.py` | `Rig` (bones/sockets by absolute rest position) and the `Clip` keyframe DSL |
+| `rig.py` | `Rig` (bones/sockets/aliases by absolute rest position) and the `Clip` keyframe DSL (+ dense baked tracks) |
+| `anim/` | the animation toolkit: skeleton templates, smooth-skin auto-weights, curves, IK animator, gait/idle/strike generators, stick-figure debug (see below) |
 | `piece.py` | `Piece`: collects parts, bakes, builds LOD1, writes piece GLB + fragments GLB |
 | `fracture.py` | Voronoi triangle clustering -> shells with `{EH,RH}_Interior` insides (called by `Piece.build`) |
 | `gltf_writer.py` | low level GLB writer (skins, animations LINEAR/STEP, KHR emissive_strength / transmission / volume / ior) |
@@ -38,7 +39,7 @@ A piece script is `tools/forge/pieces/{asset_id}.py` exposing `build() -> (piece
 * Everything is modelled directly in **world rest-pose coordinates** (the pose in the Idle t=0 frame). Bones have no rest rotation.
 * Winding is CCW from outside. `lathe` profiles are `(r, y)` listed counter-clockwise: **up the outer wall bottom-to-top, then back toward the axis** (solid on your left).
   Open shells (skirts, cloth) are single sided: use `EH_Cloth` (double sided) or add an inner wall.
-* Bones: use exactly the sheet's contract bones (`docs/art/README.md` section 0). Do not add bones. Sockets are nodes under bones (`rig.socket`).
+* Bones: the contract bones must exist and keep their meaning; EXTRA bones are allowed (and expected: see **Animation toolkit**). Sockets are nodes under bones (`rig.socket`).
 * Budgets (validator): LOD0 pawn 15k / rook 18k / bishop 22k / queen,king 30k / knight 35k; LOD1 4k/5k/6k/8k/8k/9k; fragments <= 6k. `Piece.build` auto-makes LOD1 (QEM, ~25 %) and fragments (count by role).
   **Keep LOD0 about 3 % under budget**; print `p.tri_count()` while building (the pawn sits at 14.8k).
 * Emissive discipline: 1-2 focal points per piece (art README section 3). The pawn has the boss rune + a thin groove seam only.
@@ -120,7 +121,7 @@ Add one with `register(MaterialDef("EH_Wood", gen_fn(n, seed) -> TextureSet, see
 `Rig.add(name, parent, abs_pos)`, `Rig.socket(name, bone, abs_pos)`. `Clip(name, duration, loop, fps)`: `.key(bone, 'rot'|'pos'|'scale', t, value, ease)`, `.keys(...)`, `.wave(bone, path, axis, amp, cycles)`, `.hold`, `.loop_close()`.
 Rotation is Euler degrees X,Y,Z about the bone pivot, **+rx pitches +Y toward +Z: a hanging arm raises forward/up with negative rx**; `+ry` turns +Z toward +X; `+rz` tips +Y toward -X.
 Easings: `linear in/out/in_out_quad|cubic, in_expo out_expo, in_back out_back in_out_back, out_elastic, smooth, hold`. STEP tracks: `key(..., step=True)` (scale toggles). Do not translate a child bone away from its parent (rigid skin
-would tear the limb apart): rotate, or translate the *parent*. Weapons that must appear/disappear use `weapon_summon`-style scale tracks on a contract-allowed node.
+would tear the limb apart): rotate, or translate the *parent* (the toolkit's pelvis `pos` + leg IK does this for you). Weapons that must appear/disappear use `weapon_summon`-style scale tracks on a contract-allowed node.
 
 ### `piece.py`
 `Piece(faction, role, rig, clips, display_name=, attack_style=, impact_time=, strike_range=, seed=)`; `.add(name, mesh, material, bone, bone2=, blend=(v0,v1), axis=1, lod1="auto"|"keep"|None, bake=True, occluder=True, frag=True, uv_scale=None, tint=None)`;
@@ -131,3 +132,52 @@ would tear the limb apart): rotate, or translate the *parent*. Weapons that must
 2. `npm run turntables -- --ids <id>` and `--clip Attack`: look at the PNGs; silhouette at small size, one signature shape, material variety, emissive count, impact frame on the blow, nothing detached in any clip.
 3. Faction pair `role_{role}.png`: Emberhold mid-value warm, Rime very dark with bright accents (greyscale test).
 4. Delete scratch PNGs (`*_single_*.png`); keep only `{id}.png`, `{id}_attack.png`, `role_*.png`.
+
+## Animation toolkit (`tools/forge/anim/`)
+
+The old pieces were rigidly skinned statues with 6 bones and hand-typed key tables. The pawns (`pieces/emberhold_pawn.py`,
+`rime_pawn.py`) are now the reference for the new workflow: **full skeleton -> smooth skin -> procedural, IK-driven clips baked to dense
+LINEAR tracks**. Port the other 10 pieces the same way (knights use `quadruped_rig` + `quadruped_gait`). Run `python3 tools/forge/build_all.py --only <id>`.
+
+### 1. Skeleton templates (`anim/templates.py`)
+`humanoid_rig(JOINTS, weapon=pos, cape=[p1,p2,p3], shield=pos)` builds: `root > body(pelvis) > spine > chest > neck > head`, `top` (bedroll / backpack node,
+under chest), `clavicle_X > arm_X (UPPER ARM, pivot at the shoulder) > hand_X (FOREARM, pivot at the ELBOW: legacy contract name) > wrist_X (the hand)`,
+`thigh_X > shin_X > foot_X > toe_X`, `weapon` (under `wrist_R`; pass `weapon_parent="body"` for a sheathed sword), optional `cape_1..3` chain under `top`, optional `shield`.
+Aliases: `upper_arm_X`, `forearm_X`, `fist_X`, `pelvis` (use them in `Piece.add`/`Skin`; not exported). Joints are ABSOLUTE rest positions measured off your meshes
+(`..._R` mirrors `..._L` unless given). Rules: legs must be slightly bent at rest (hip-ankle distance < thigh+shin) and the elbow/knee positions must sit on the meshes' own
+bend; `socket_weapon_R`/`socket_cast` go under `wrist_R`/`wrist_L`, `socket_impact` under `body`.
+`quadruped_rig(J)` (knights): `root > body(rump) > mount_body(barrel) > mount_chest(withers) > neck_1 > neck_2 > mount_head > jaw`, `top` (saddle) under mount_body,
+`hind_upper/lower/hoof_X` (hip -> hock -> fetlock) under body, `fore_upper/lower/hoof_X` under mount_chest, `tail_1..3`. Mount the rider by building the humanoid with
+`pelvis_name="rider_pelvis"` and re-parenting to `top` (add the rider bones to the same Rig).
+
+### 2. Smooth skinning (`anim/skin.py`)
+Weights are computed from the final REST positions at write time (LOD0, LOD1 and fragments stay consistent; <= 4 influences, normalised). `Piece.add(name, mesh, mat, None, skin=...)`:
+* `Skin.rigid(bone)` or simply `bone="shin_L"`: armour plates, weapons, crowns, pedestal. Layered plates follow the bone they sit on (greave/kneecap -> `shin`, cuirass -> `chest`, lames -> `spine`, pauldron -> `arm`, vambrace -> `hand_X`).
+* `Skin.chain([bones], pre="body", tip=pt, zone=0.4)`: limbs/torso/neck/cape. Each vertex is projected on the bone polyline; weight slides between neighbouring bones with a smoothstep over +-zone x (shorter adjacent bone) around each joint, `pre` blends into the parent above the first joint. 0.35-0.45 = no candy-wrapper pinch.
+* `Skin.nearest([(bone, p0, p1), ...], tau=0.03, bias={...})`: softmax of distance to bone SEGMENTS: skirts, tabards, loincloths. Combine with `Skin.gradient(rigid_body, nearest, axis=1, v0=0.58, v1=0.50)` so the waist follows the pelvis and the hem follows the thighs.
+* `limb_tube(ctrl, radii, joints=[knee], spacing=.03, joint_spacing=.015, joint_zone=.045, sides=8)`: a swept tube with DENSE rings around the joint, so the blend zone has geometry to bend. Build ONE continuous tube through shoulder-elbow-wrist (or hip-knee-ankle) instead of one capped tube per bone. Two meshes sharing one chain skin also deform seamlessly (Rime thigh + shin).
+Budget: dense joint rings cost ~16 tris each; pay for them by trimming repeated details (tufts, rivets, lips). Pawn LOD0 stays < 15k (14.85k / 13.3k).
+
+### 3. Animation (`anim/curves.py`, `animator.py`, `motion.py`)
+```python
+from anim import Animator, Curve, Fn, Wave, humanoid_rig
+from anim import motion as M
+a = Animator(rig)
+M.plant_feet(a)                                   # leg IK goals in plinth space + pelvis reach clamp (legs never over-extend / pop)
+a.goal("ik_hand_R", ("arm_R","hand_R","wrist_R"), spaces=(("body", 1.0),), rot=(0,0,0))   # hand pinned to the hilt in PELVIS space
+M.idle(a, period=3.0)                             # breath + weight shift (+ head stabilisation); loops when period == clip length
+a.rot("chest", Curve([(0,(0,0,0)), (0.6,(12,-20,0),"anticipate"), (0.95,(18,22,0),"snap_in"), (2.0,(0,0,0),"in_out_cubic")]))   # Euler deg deltas
+a.pos("body", Curve([...]))                       # metres, delta from rest
+M.set_foot(a, "foot_L", pos=Curve([...]), rot=Curve([...]))                              # absolute-in-plinth foot targets (delta from rest ankle)
+a.secondary(["top"], driver="chest", freq=2.3, zeta=0.32, accel=0.05)                   # spring follow-through / overlap
+clip = a.bake("Attack", 2.0, loop=False, fps=60, keep_times=(0.95,))                    # dense LINEAR quaternion tracks, key-reduced
+```
+* **Curves**: keys WITHOUT an ease flow through a monotone cubic spline (organic arcs, never overshoots); an ease flag stops/starts there. Eases: `rig.EASE` names, presets `ease`, `ease_in_out`, `anticipate`, `snap_in`, `whip`, `soft_land`, `overshoot`, CSS bezier 4-tuples, `("spring", overshoot, half_cycles)` for settle. `{"tan":"flat"}` on a key = hold. `Curve(keys, loop=period)` for cycles. `Wave`, `Fn`, signals add with `+`, scale with `*`; `step_signal`/`pulse` for blend weights.
+* **IK goals** (`Animator.goal`): 2-bone IK with `spaces=(("chest", w1), ("body", w2), ("world", w3))` blends (draw a sword: pelvis space -> chest space); `pos` is a DELTA from the rest joint in that space (`M.abs_pos(rest, curve)` lets you author absolute points), `rot` an Euler/3x3 (`M.aim(axis_rest, direction_curve)` = "point the blade here"), `weight` IK<->FK, `pole_target/pole_mix` steer the elbow/knee. A target equal to the rest pose yields the identity pose, so rest never pops. Mind arm reach (~0.25 m for pawns).
+* **Gaits**: `M.biped_gait(a, period, stride, lift, duty, bob, sway, roll, twist, lean, arm_swing, toe_off, strike)` = contact/down/pass/up from foot paths + pelvis dip/sway/tilt/yaw, counter-twisting spine, arm counter-swing (set `arm_swing=0` for arms held by IK), heel-off/toe-up foot pitch, head stabilisation. `M.quadruped_gait(a, period, "walk"|"trot"|"canter", ...)` (leg phase offsets, spine wave, head bob, tail). Stance feet are exactly planted; `stride` sweeps them back over the plinth (0 = march on the spot). Contact windows are written to the clip's glTF animation `extras.footContacts` (`{ "foot_L": [[t0,t1],...] }`) for footstep audio/dust.
+* **Strikes**: `M.strike_keys(rest, wind, hit, follow, t_wind, t_hit, ...)` builds anticipation -> wind -> snap -> hold -> follow -> recover keys; give proximal joints `lead=.04-.07` so pelvis -> chest -> arm -> weapon fire in sequence. Bake attacks at `fps=60` and pass `keep_times=(impact,)`: the weapon channel must reach its hit pose exactly at `impactTime`.
+* **Surrender**: `M.release_weapon(a, "weapon", t0, floor_y, rest_y_off, axis_rest, heading, land_xz, up_local=blade_thickness_axis)` = free fall + two bounces + settle flat on the plinth. Kneel = lower the pelvis by (knee_y + thigh - hip_y), `set_foot` ankle to `knee - shin` behind it, foot pitch ~172 deg (instep down); the reach clamp and IK keep knees on the plinth.
+* **Debug**: `anim.debug.stick_strip(animator, animator.sample(dur, fps, loop), times, "x.png")` renders front/side stick figures without a GLB build; `animator.sample()` also gives world positions to assert reach/contact numerically.
+
+### 4. Porting checklist
+1. Measure joints off the existing meshes; `humanoid_rig`/`quadruped_rig`; keep sockets. 2. Replace per-limb capped tubes with `limb_tube` + `Skin.chain`; cloth with `nearest`/`gradient`; plates `bone=`. 3. Keep LOD0 under budget (print `p.tri_count()`). 4. Write one `clip_*` function per clip returning `(animator, duration, loop, fps, keep_times)` and a `make_clips(rig)`. Keep clip durations and `impactTime`/`strikeRange` unchanged. 5. `build_all.py --only <id>`; render sheets and a strip per clip; look for tearing at knees/elbows/shoulders, plates poking through skin, feet leaving the plinth. 6. Surrender must end on the knees without sinking into the plinth.

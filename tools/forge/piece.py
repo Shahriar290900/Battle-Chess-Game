@@ -78,6 +78,7 @@ class Part:
     material: str
     bone: str
     bone2: str | None = None
+    skin: object = None          # anim.skin.Skin: smooth per-vertex weights from the final rest-pose positions (overrides bone/bone2)
     lod1: object = "auto"        # "auto" decimate | "keep" | None (omit from LOD1 and fragments)
     bake: bool = True            # bake AO / wear vertex colours
     occluder: bool = True        # contributes to other parts' AO
@@ -102,10 +103,13 @@ class Piece:
         self.prefix = "EH" if faction == "emberhold" else "RH"
 
     # ------------------------------------------------------------ authoring
-    def add(self, name, mesh: Mesh, material: str, bone: str, bone2=None, blend=None, axis=1, lod1="auto",
-            bake=True, occluder=True, frag=True, uv_scale=None, tint=None):
+    def add(self, name, mesh: Mesh, material: str, bone, bone2=None, blend=None, axis=1, lod1="auto",
+            bake=True, occluder=True, frag=True, uv_scale=None, tint=None, skin=None):
         """Add a part.  `blend=(v0, v1)` with `bone2` smoothly shifts weight from `bone` (at coordinate v0 along
         `axis`) to `bone2` (at v1) - use for cloaks, skirts, fur.  Otherwise the part is rigidly bound to `bone`."""
+        if skin is not None:
+            bone = skin.primary(self.rig)          # a representative bone (rigid fallbacks, LOD bookkeeping)
+        bone = self.rig.resolve(bone)
         assert bone in self.rig.bones or bone in self.rig.nodes, f"unknown bone {bone}"
         if mesh is None or mesh.tri_count == 0:
             return
@@ -117,7 +121,7 @@ class Piece:
             t = t * t * (3 - 2 * t)
             m = m.copy()
             m.A["bw"] = t[:, None]
-        self.parts.append(Part(name, m, material, bone, bone2 if blend is not None else None, lod1, bake, occluder, frag, tint))
+        self.parts.append(Part(name, m, material, bone, bone2 if blend is not None else None, skin, lod1, bake, occluder, frag, tint))
 
     def add_all(self, name, meshes, material, bone, **kw):
         self.add(name, merge(meshes), material, bone, **kw)
@@ -223,13 +227,16 @@ class Piece:
             for p, m in lst:
                 m = m.compact() if m.N is not None else m.shade()
                 n = len(m.P)
-                b1 = self.rig.index(p.bone)
-                bw = m.A["bw"][:, 0] if "bw" in m.A else np.zeros(n)
-                b2 = self.rig.index(p.bone2) if p.bone2 else b1
-                J = np.zeros((n, 4), dtype=np.int64)
-                W = np.zeros((n, 4))
-                J[:, 0], J[:, 1] = b1, b2
-                W[:, 0], W[:, 1] = 1 - bw, bw
+                if p.skin is not None:
+                    J, W = p.skin.weights(m.P, self.rig)
+                else:
+                    b1 = self.rig.index(p.bone)
+                    bw = m.A["bw"][:, 0] if "bw" in m.A else np.zeros(n)
+                    b2 = self.rig.index(p.bone2) if p.bone2 else b1
+                    J = np.zeros((n, 4), dtype=np.int64)
+                    W = np.zeros((n, 4))
+                    J[:, 0], J[:, 1] = b1, b2
+                    W[:, 0], W[:, 1] = 1 - bw, bw
                 Ps.append(m.P)
                 Ns.append(m.N)
                 UVs.append(m.UV)
@@ -285,7 +292,7 @@ class Piece:
             chans = []
             for ch in clip.bake(rig):
                 chans.append({**ch, "node": node_of[ch["bone"]]})
-            g.animation(clip.name, chans)
+            g.animation(clip.name, chans, extras=getattr(clip, "extras", None) or None)
         data = g.to_bytes()
         return data, len(data)
 

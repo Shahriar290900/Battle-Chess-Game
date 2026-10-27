@@ -15,6 +15,9 @@ import geom as g                      # noqa: E402
 from geom import TAU, merge, smoothstep  # noqa: E402
 from piece import Piece               # noqa: E402
 from rig import Clip, Rig             # noqa: E402
+from anim import Animator, Curve, Fn, Wave, Skin, humanoid_rig, limb_tube   # noqa: E402
+from anim import motion as M         # noqa: E402
+from anim.curves import step_signal  # noqa: E402
 import _rime_common as rc             # noqa: E402
 from _rime_common import unit, mir, frame_xf, shard, spikes, cluster, frost_layer  # noqa: E402
 
@@ -27,23 +30,34 @@ BUTT = np.array([-0.12, 0.50, 0.02])
 
 
 # ======================================================================================= rig
+WR0 = np.array([-0.185, 0.545, 0.165])           # rest wrist_R (right hand on the cleaver handle)
+WL0 = np.array([0.200, 0.540, 0.140])
+JOINTS = dict(pelvis=(0, 0.53, -0.02), spine=(0, 0.60, 0.0), chest=(0, 0.70, 0.04), neck=(0, 0.765, 0.075), head=(0, 0.80, 0.12), top=(0, 0.80, -0.07),
+              clavicle_L=(0.05, 0.78, 0.05), shoulder_L=(0.18, 0.78, 0.07), elbow_L=(0.205, 0.69, 0.10), wrist_L=tuple(WL0),
+              hip_L=(0.07, 0.55, -0.01), knee_L=(0.088, 0.41, 0.145), ankle_L=(0.085, 0.268, 0.095), toe_L=(0.08, 0.245, 0.175),
+              clavicle_R=(-0.05, 0.78, 0.05), shoulder_R=(-0.18, 0.78, 0.07), elbow_R=(-0.205, 0.69, 0.10), wrist_R=tuple(WR0),
+              hip_R=(-0.07, 0.55, -0.01), knee_R=(-0.088, 0.41, 0.10), ankle_R=(-0.085, 0.268, 0.05), toe_R=(-0.08, 0.245, 0.13))
+
+
 def make_rig() -> Rig:
-    r = Rig()
-    r.add("root", None, (0, 0, 0))
-    r.add("body", "root", (0, 0.52, -0.02))
-    r.add("spine", "body", (0, 0.58, -0.02))
-    r.add("head", "spine", (0, 0.80, 0.12))
-    r.add("top", "spine", (0, 0.80, -0.07))
-    r.add("arm_L", "spine", (0.18, 0.78, 0.07))
-    r.add("hand_L", "arm_L", (0.21, 0.60, 0.11))
-    r.add("arm_R", "spine", (-0.18, 0.78, 0.07))
-    r.add("hand_R", "arm_R", (-0.215, 0.60, 0.14))
-    r.add("weapon", "hand_R", (-0.17, 0.45, 0.20))        # the cleaver (centre of mass): lets Surrender drop it
-    r.socket("socket_weapon_R", "hand_R", (-0.16, 0.51, 0.11))
+    """Humanoid skeleton (anim.templates.humanoid_rig) with a 3-bone cape chain under `top` and the cleaver on `weapon` (child of wrist_R).
+    Contract bones: hand_* = FOREARM (pivot at the elbow), wrist_* = the hand."""
+    r = humanoid_rig(JOINTS, weapon=(-0.17, 0.45, 0.20), cape=[(0, 0.78, -0.10), (0, 0.64, -0.13), (0, 0.50, -0.14)])
+    r.socket("socket_weapon_R", "wrist_R", (-0.16, 0.51, 0.11))
     r.socket("socket_cast", "head", (0, 0.88, 0.22))
     r.socket("socket_impact", "body", (-0.02, 0.50, 0.55))
     r.socket("socket_head", "head", (0, 0.96, 0.14))
     return r
+
+
+J_ = lambda k: np.array(JOINTS[k], dtype=float)      # noqa: E731
+LEG_SKIN = {s: Skin.chain([f"thigh_{s}", f"shin_{s}", f"foot_{s}"], pre="body", tip=JOINTS[f"toe_{s}"], zone=0.4) for s in "LR"}
+ARM_SKIN = {s: Skin.chain([f"arm_{s}", f"hand_{s}"], pre=f"clavicle_{s}", tip=JOINTS[f"wrist_{s}"], zone=0.42) for s in "LR"}
+TORSO_SKIN = Skin.chain(["body", "spine", "chest"], tip=JOINTS["neck"], zone=0.45)
+NECK_SKIN = Skin.chain(["neck", "head"], pre="chest", tip=(0, 0.84, 0.15), zone=0.4)
+CAPE_SKIN = Skin.chain(["cape_1", "cape_2", "cape_3"], pre="chest", tip=(0, 0.36, -0.14), zone=0.4)
+_HANG = Skin.nearest([("body", "pelvis", "spine"), ("thigh_L", J_("hip_L"), J_("knee_L")), ("thigh_R", J_("hip_R"), J_("knee_R"))], tau=0.035, bias={"body": 1.8})
+CLOTH_SKIN = Skin.gradient(Skin.rigid("body"), _HANG, axis=1, v0=0.57, v1=0.46)
 
 
 # ======================================================================================= torso surface helpers
@@ -91,36 +105,37 @@ def legs(p: Piece):
         dz = 0.045 if side > 0 else 0.0                     # left foot advanced
         sh = [(0.085, 0.262, 0.05 + dz), (0.088, 0.34, 0.075 + dz), (0.085, 0.41, 0.10 + dz)]
         sh = [(side * x, y, z) for x, y, z in sh]
-        shin = g.tube(sh, [0.025, 0.033, 0.040], sides=7, samples=2, cap=None, up=(0, 0, 1)).noised(0.002, 30, 2, seed=2 + side)
-        p.add(f"shin_{nm}", shin, "RH_Bone", "body", uv_scale=2)
+        kn = J_(f"knee_{nm}")
+        shin = limb_tube(sh[::-1], [0.040, 0.033, 0.025], joints=[kn], spacing=0.03, joint_spacing=0.016, joint_zone=0.045, sides=7, cap=None, up=(0, 0, 1)).noised(0.002, 30, 2, seed=2 + side)
+        p.add(f"shin_{nm}", shin, "RH_Bone", None, skin=LEG_SKIN[nm], uv_scale=2)
         th = [(0.085, 0.41, 0.10 + dz), (0.080, 0.48, 0.03 + dz * 0.5), (0.070, 0.55, -0.01)]
         th = [(side * x, y, z) for x, y, z in th]
-        thigh = g.tube(th, [0.040, 0.048, 0.054], sides=8, samples=2, cap=None, up=(0, 0, 1))
-        p.add(f"thigh_{nm}", thigh, "RH_Armour", "body", uv_scale=2)
+        thigh = limb_tube(th, [0.040, 0.048, 0.054], joints=[kn], spacing=0.03, joint_spacing=0.016, joint_zone=0.045, sides=8, cap=None, up=(0, 0, 1))
+        p.add(f"thigh_{nm}", thigh, "RH_Armour", None, skin=LEG_SKIN[nm], uv_scale=2)
         # foot (bare, grey) + claws
         foot = g.superellipsoid((0.044, 0.026, 0.092), 0.55, 0.65, 5, 10).translated(side * 0.080, 0.249, 0.045 + dz)
         heel = g.superellipsoid((0.030, 0.024, 0.030), 0.6, 0.6, 3, 8).translated(side * 0.080, 0.252, -0.018 + dz)
-        p.add(f"foot_{nm}", merge([foot, heel]), "RH_Bone", "body", uv_scale=2)
+        p.add(f"foot_{nm}", merge([foot, heel]), "RH_Bone", f"foot_{nm}", uv_scale=2)
         sab = g.superellipsoid((0.047, 0.020, 0.074), 0.5, 0.6, 4, 10).translated(side * 0.080, 0.266, 0.062 + dz)
         sab2 = g.superellipsoid((0.040, 0.015, 0.020), 0.5, 0.6, 3, 8).translated(side * 0.080, 0.274, 0.118 + dz)
-        p.add(f"sabaton_{nm}", merge([sab, sab2]), "RH_Obsidian", "body")
+        p.add(f"sabaton_{nm}", merge([sab, sab2]), "RH_Obsidian", f"foot_{nm}")
         claws = spikes([((side * (0.080 + k * 0.026), 0.252, 0.128 + dz), (k * 0.25, 0.12, 1.0), 0.052 - abs(k) * 0.010, 0.013) for k in (-1, 0, 1)],
                        seed=10 + (1 if side > 0 else 2), flat=0.35, sides=4, tip=0.55)
-        p.add(f"claws_{nm}", claws, "RH_Ice", "body")
+        p.add(f"claws_{nm}", claws, "RH_Ice", f"foot_{nm}")
         # shin plate (obsidian, forward leaning) with a rolled top and a frost cap
         plate = g.extrude_plane(np.array([(0.272, 0.095), (0.402, 0.13), (0.414, 0.156), (0.290, 0.118)]) + [0, dz], 0.034, "YZ", bevel=0.0065, bevel_segments=1)
         plate = plate.translated(side * 0.087, 0, 0)
-        p.add(f"shinplate_{nm}", plate, "RH_Obsidian", "body")
-        p.add(f"shin_lames_{nm}", rc.limb_lames(sh, [0.025, 0.033, 0.040], [0.20, 0.42, 0.64], h=0.046, sweep=235, grow=0.005, seg=7), "RH_Armour", "body")
-        p.add(f"thigh_lames_{nm}", rc.limb_lames(th, [0.040, 0.048, 0.054], [0.22, 0.48, 0.74], h=0.052, sweep=240, grow=0.006, seg=7), "RH_Obsidian", "body")
+        p.add(f"shinplate_{nm}", plate, "RH_Obsidian", f"shin_{nm}")
+        p.add(f"shin_lames_{nm}", rc.limb_lames(sh, [0.025, 0.033, 0.040], [0.20, 0.42, 0.64], h=0.046, sweep=235, grow=0.005, seg=7), "RH_Armour", f"shin_{nm}")
+        p.add(f"thigh_lames_{nm}", rc.limb_lames(th, [0.040, 0.048, 0.054], [0.22, 0.48, 0.74], h=0.052, sweep=240, grow=0.006, seg=7), "RH_Obsidian", f"thigh_{nm}")
         cap = g.superellipsoid((0.036, 0.032, 0.026), 0.55, 0.65, 4, 9).rotated(-20, 0, 0).translated(side * 0.088, 0.432, 0.128 + dz)
-        p.add(f"kneecap_{nm}", cap, "RH_Obsidian", "body")
-        p.add(f"kneecap_frost_{nm}", frost_layer(cap, 0.006, min_ny=0.3, cover=0.4, seed=11 + (side > 0)), "RH_Frost", "body", lod1=None, tint=lambda P: np.full(len(P), 0.55))
+        p.add(f"kneecap_{nm}", cap, "RH_Obsidian", f"shin_{nm}")
+        p.add(f"kneecap_frost_{nm}", frost_layer(cap, 0.006, min_ny=0.3, cover=0.4, seed=11 + (side > 0)), "RH_Frost", f"shin_{nm}", lod1=None, tint=lambda P: np.full(len(P), 0.55))
         wire = merge([rc.helix(0.0305, 0.268, 0.305, 2.0, r=0.0032, sides=3, per_turn=7, ax=side * 0.085, az=0.056 + dz),
                       rc.helix(0.038, 0.345, 0.375, 1.5, r=0.0032, sides=3, per_turn=7, ax=side * 0.088, az=0.088 + dz)])
-        p.add(f"leg_wire_{nm}", wire, "RH_Silver", "body", lod1=None)
+        p.add(f"leg_wire_{nm}", wire, "RH_Silver", f"shin_{nm}", lod1=None)
         knee = cluster((side * 0.088, 0.428, 0.138 + dz), (0.0, 0.3, 1.0), 3, (0.05, 0.09), (0.012, 0.018), tilt=35, seed=4 + abs(side) * (1 if side > 0 else 3), flat=0.3)
-        p.add(f"knee_ice_{nm}", knee, "RH_Ice", "body")
+        p.add(f"knee_ice_{nm}", knee, "RH_Ice", f"shin_{nm}")
     # pelvis + loincloth + belt
     pelvis = g.superellipsoid((0.100, 0.052, 0.072), 0.6, 0.6, 5, 12).translated(0, 0.545, -0.02)
     p.add("pelvis", pelvis, "RH_Armour", "body", uv_scale=2)
@@ -137,7 +152,7 @@ def legs(p: Piece):
         poly = np.array([(-0.0185, 0), (0.0185, 0), (0.0135, -ln * 0.78), (tipx + 0.004, -ln), (tipx - 0.004, -ln * 0.92), (-0.0125, -ln * 0.74)])
         s = g.extrude(poly, 0.0075, 0.0015, 1).rotated(-6 - 4 * rng.random(), 0, (x * 30)).translated(x, 0.568, 0.081 + 0.012 * (1 - abs(x) / 0.08))
         strips.append(s)
-    p.add("loincloth", merge(strips), "RH_Cloth", "body", uv_scale=2)
+    p.add("loincloth", merge(strips), "RH_Cloth", None, skin=CLOTH_SKIN, uv_scale=2)
     belt = g.tube([(-0.098, 0.572, 0.036), (-0.05, 0.572, 0.080), (0.0, 0.572, 0.090), (0.05, 0.572, 0.080), (0.098, 0.572, 0.036)], 0.012,
                   sides=5, samples=3, cap="round", cap_steps=1, ellipse=(1.0, 1.0), up=(0, 1, 0))
     p.add("belt_rope", belt, "RH_Silver", "body")
@@ -146,17 +161,17 @@ def legs(p: Piece):
     # frost clusters on loincloth hems + bone knobs
     hem = [cluster((x + 0.002, 0.368 + 0.0 * x, 0.098), (0.0, -0.2, 1.0), 2, (0.018, 0.038), (0.005, 0.008), tilt=30, seed=20 + i, flat=0.2, sides=4)
            for i, x in enumerate(np.arange(-0.08, 0.081, 0.04))]
-    p.add("loin_frost", merge(hem), "RH_Frost", "body")
+    p.add("loin_frost", merge(hem), "RH_Frost", None, skin=CLOTH_SKIN)
 
 
 # ======================================================================================= torso
 def torso(p: Piece):
     path = [(0, 0.54, -0.02), (0, 0.65, 0.03), (0, 0.76, 0.09)]
     t = g.tube(path, [0.085, 0.098, 0.120], sides=10, samples=3, cap="round", cap_steps=1, ellipse=(0.76, 1.0), up=(0, 0, 1)).noised(0.002, 24, 2, seed=5)
-    p.add("torso", t, "RH_Armour", "spine", uv_scale=2)
+    p.add("torso", t, "RH_Armour", None, skin=TORSO_SKIN, uv_scale=2)
     # shoulder yoke / hunch
     hump = g.superellipsoid((0.125, 0.052, 0.082), 0.6, 0.7, 5, 12).rotated(-14, 0, 0).translated(0, 0.80, 0.045)
-    p.add("hump", hump, "RH_Armour", "spine", uv_scale=2)
+    p.add("hump", hump, "RH_Armour", "chest", uv_scale=2)
     # cracked chest plate: two halves + glow seam in the gap
     crack = [(0.002, 0.805), (0.018, 0.765), (-0.010, 0.725), (0.020, 0.685), (-0.008, 0.645), (0.004, 0.595)]
     gap = 0.0042
@@ -164,13 +179,13 @@ def torso(p: Piece):
     R = np.array([(-0.082, 0.80), (-0.112, 0.74), (-0.088, 0.595)] + [(c[0] - gap, c[1]) for c in crack[::-1]])
     for nm, poly in (("L", L), ("R", R)):
         pl = g.extrude(poly, 0.012, 0.0035, 1)
-        p.add(f"chest_plate_{nm}", wrap(pl, 0.004), "RH_Obsidian", "spine")
+        p.add(f"chest_plate_{nm}", wrap(pl, 0.004), "RH_Obsidian", "chest")
     seam = np.array([torso_point(c[1], c[0], 0.001) + [0, 0, 0.001] for c in crack])
     seam_m = g.tube(seam, 0.0036, sides=4, samples=1, cap=None, smooth=False)
-    p.add("chest_seam_glow", seam_m, "RH_Glow", "spine", bake=False, lod1="keep")
+    p.add("chest_seam_glow", seam_m, "RH_Glow", "chest", bake=False, lod1="keep")
     for nm, poly in (("L", L), ("R", R)):
         wp = [torso_point(y, x, 0.0105) for x, y in poly]
-        p.add(f"chest_edge_wire_{nm}", rc.poly_wire(wp, 0.0030, 4, True), "RH_Silver", "spine", lod1=None)
+        p.add(f"chest_edge_wire_{nm}", rc.poly_wire(wp, 0.0030, 4, True), "RH_Silver", "chest", lod1=None)
     # silver lacing across the crack (6 loops)
     lace = []
     for k in range(6):
@@ -178,7 +193,7 @@ def torso(p: Piece):
         a = torso_point(c[1] + 0.012, c[0] - 0.030, 0.012)
         b = torso_point(c[1] - 0.006, c[0] + 0.030, 0.012)
         lace.append(g.tube([a, (a + b) / 2 + [0, 0, 0.004], b], 0.0034, sides=4, samples=1, cap=None, smooth=False))
-    p.add("chest_lacing", merge(lace), "RH_Silver", "spine", lod1=None)
+    p.add("chest_lacing", merge(lace), "RH_Silver", "chest", lod1=None)
     # rib bands (front 200 degrees): silver hoops
     bands = []
     for y in (0.62, 0.67, 0.72):
@@ -188,7 +203,7 @@ def torso(p: Piece):
             c = math.cos(math.radians(a))
             pts.append((s * (rw(y) + 0.014), y, zc(y) + c * (rd(y) + 0.014)))
         bands.append(g.tube(pts, 0.0058, sides=4, samples=1, cap="round", cap_steps=1, smooth=True, up=(0, 1, 0)))
-    p.add("rib_bands", merge(bands), "RH_Silver", "spine", tint=lambda P: np.full(len(P), 0.5))
+    p.add("rib_bands", merge(bands), "RH_Silver", "chest", tint=lambda P: np.full(len(P), 0.5))
     # back plates: three overlapping scales, jagged lower edge
     bp = []
     for i, y in enumerate((0.62, 0.69, 0.76)):
@@ -197,12 +212,12 @@ def torso(p: Piece):
         bp.append(wrap(g.extrude(poly, 0.010, 0.0035, 1), 0.005 + 0.002 * i, back=True))
     p.add("back_plate_wire", merge([rc.poly_wire([torso_point(yy, xx, 0.0105 + 0.002 * i, back=True) for xx, yy in
                                   [(-0.085, y0 + 0.035), (0.085, y0 + 0.035), (0.088, y0 - 0.02), (0.060, y0 - 0.045), (0.030, y0 - 0.026), (0.0, y0 - 0.050), (-0.032, y0 - 0.028), (-0.060, y0 - 0.046), (-0.088, y0 - 0.02)]], 0.0026, 3, True)
-                                  for i, y0 in enumerate((0.62, 0.69, 0.76))]), "RH_Silver", "spine", lod1=None)
-    p.add("back_plates", merge(bp), "RH_Obsidian", "spine")
+                                  for i, y0 in enumerate((0.62, 0.69, 0.76))]), "RH_Silver", "chest", lod1=None)
+    p.add("back_plates", merge(bp), "RH_Obsidian", "chest")
     # vertebrae knobs between the spikes
     kn = g.instances(g.dome(0.012, 0.011, 6, 1), [torso_point(y, 0.0, 0.016, back=True) for y in np.linspace(0.58, 0.79, 8)],
                      [(0, 0.2, -1.0)] * 8)
-    p.add("vertebrae", kn, "RH_Bone", "spine", lod1=None)
+    p.add("vertebrae", kn, "RH_Bone", "chest", lod1=None)
     # tattered half cape (soft: spine -> top): a jagged-hem grid draped behind the shoulders
     R, K = 8, 9
     rings, tips = [], []
@@ -225,10 +240,10 @@ def torso(p: Piece):
         if r == R - 1:
             tips = [row[k] for k in range(1, K, 2)]
     cm = g.loft(np.array(rings)[::-1], closed=False, crease=60, v_tile=0.25, u_tile=0.25)
-    p.add("cape", cm, "RH_Cloth", "spine", bone2="top", blend=(0.78, 0.48), uv_scale=2)
+    p.add("cape", cm, "RH_Cloth", None, skin=CAPE_SKIN, uv_scale=2)
     hemf = [cluster((x, y + 0.01, z), (0.0, -1.0, -0.3), 2, (0.022, 0.04), (0.005, 0.008), tilt=35, seed=30 + i, flat=0.2, sides=4)
             for i, (x, y, z) in enumerate(tips)]
-    p.add("cape_frost", merge(hemf), "RH_Frost", "spine", bone2="top", blend=(0.78, 0.48), lod1=None)
+    p.add("cape_frost", merge(hemf), "RH_Frost", None, skin=CAPE_SKIN, lod1=None)
 
 
 # ======================================================================================= spikes
@@ -279,15 +294,15 @@ def arms(p: Piece):
     for side, nm in ((+1, "L"), (-1, "R")):
         up = [(0.185, 0.775, 0.07), (0.200, 0.735, 0.085), (0.205, 0.69, 0.10)]
         up = [(side * x, y, z) for x, y, z in up]
-        upper = g.tube(up, [0.030, 0.026, 0.025], sides=7, samples=2, cap="round", cap_steps=1, up=(0, 0, 1))
-        p.add(f"arm_{nm}", upper, "RH_Bone", f"arm_{nm}", uv_scale=2)
         fore_pts = [(0.205, 0.69, 0.10), (0.210, 0.60, 0.11), (0.200, 0.54, 0.14)]
         if side < 0:
             fore_pts = [(0.205, 0.69, 0.10), (0.215, 0.60, 0.13), (0.185, 0.545, 0.165)]
         fore_pts = [(side * x, y, z) for x, y, z in fore_pts]
-        fore = g.tube(fore_pts, [0.025, 0.026, 0.019], sides=7, samples=2, cap="round", cap_steps=1, up=(0, 0, 1))
-        p.add(f"forearm_{nm}", fore, "RH_Bone", f"hand_{nm}", uv_scale=2)
-        # armour on the limb: telescoping lames, silver wire bindings, tattered sleeve rags
+        # ONE continuous bone-grey limb (shoulder -> elbow -> wrist), dense rings at the elbow, smooth-skinned over arm_X / hand_X (forearm)
+        limb = limb_tube(up + fore_pts[1:], [0.030, 0.026, 0.025, 0.026, 0.019], joints=[J_(f"elbow_{nm}")], spacing=0.03, joint_spacing=0.015,
+                         joint_zone=0.045, sides=7, cap="round", cap_steps=1, up=(0, 0, 1))
+        p.add(f"arm_{nm}", limb, "RH_Bone", None, skin=ARM_SKIN[nm], uv_scale=2)
+        # armour on the limb: telescoping lames, silver wire bindings, tattered sleeve rags (rigid on the bone they sit on)
         p.add(f"upper_lames_{nm}", rc.limb_lames(up, [0.030, 0.026, 0.025], [0.12, 0.42], h=0.040, sweep=230, grow=0.005, seg=7), "RH_Armour", f"arm_{nm}")
         p.add(f"vambrace_{nm}", rc.limb_lames(fore_pts, [0.025, 0.026, 0.019], [0.30, 0.52, 0.74], h=0.052, sweep=240, grow=0.005, seg=7), "RH_Obsidian", f"hand_{nm}")
         c0 = np.array(fore_pts[1])
@@ -298,12 +313,11 @@ def arms(p: Piece):
             poly = np.array([(-0.011, 0), (0.011, 0), (0.008, -ln * 0.8), (0.0, -ln), (-0.009, -ln * 0.7)])
             rags.append(g.extrude(poly, 0.006, 0.0012, 1).rotated(0, side * (-70 + 70 * k), 0).translated(side * (0.196 + 0.012 * k), 0.772 + dy, 0.07 + (-0.03 + 0.03 * k)))
         p.add(f"arm_rags_{nm}", merge(rags), "RH_Cloth", f"arm_{nm}", uv_scale=2)
-        # elbow ice spur
         sp = cluster((side * 0.222, 0.645, 0.075), (side * 1.0, 0.1, -0.3), 2, (0.07, 0.11), (0.011, 0.013), tilt=24, seed=60 + (side > 0), flat=0.3)
         p.add(f"elbow_ice_{nm}", sp, "RH_Ice", f"hand_{nm}")
     # hands
-    p.add("hand_L", hand(+1, np.array([0.200, 0.520, 0.145]), (0.0, -0.45, 1.0), 1.0), "RH_Bone", "hand_L", uv_scale=2)
-    p.add("hand_R", hand(-1, np.array([-0.178, 0.515, 0.130]), (0.1, -0.25, 1.0), 0.4), "RH_Bone", "hand_R", uv_scale=2)
+    p.add("hand_L", hand(+1, np.array([0.200, 0.520, 0.145]), (0.0, -0.45, 1.0), 1.0), "RH_Bone", "wrist_L", uv_scale=2)
+    p.add("hand_R", hand(-1, np.array([-0.178, 0.515, 0.130]), (0.1, -0.25, 1.0), 0.4), "RH_Bone", "wrist_R", uv_scale=2)
     # shoulders: L big layered plate with frost, R small cracked plate
     big = g.superellipsoid((0.072, 0.026, 0.064), 0.55, 0.7, 5, 12).noised(0.0016, 36, 2, seed=3)
     big = big.rotated(0, 0, -12).translated(0.205, 0.805, 0.07)
@@ -330,7 +344,7 @@ def head_xf(m):
 
 def head(p: Piece):
     neck = g.tube([(0, 0.765, 0.075), (0, 0.80, 0.105), (0, 0.835, 0.145)], [0.034, 0.028, 0.027], sides=7, samples=2, cap=None, up=(0, 0, 1))
-    p.add("neck", neck, "RH_Bone", "head", uv_scale=2)
+    p.add("neck", neck, "RH_Bone", None, skin=NECK_SKIN, uv_scale=2)
     skull = g.superellipsoid((0.044, 0.053, 0.050), 0.8, 0.85, 6, 12)
     brow = g.superellipsoid((0.047, 0.012, 0.026), 0.6, 0.6, 3, 8).translated(0, 0.016, 0.034)
     jaw = g.superellipsoid((0.030, 0.020, 0.036), 0.6, 0.6, 3, 8).translated(0, -0.044, 0.016)
@@ -393,72 +407,184 @@ def cleaver(p: Piece):
 
 
 # ======================================================================================= clips
-def make_clips(rig) -> list[Clip]:
-    idle = Clip("Idle", 3.4, loop=True)
-    idle.keys("spine", "rot", [(0, (0, 0, 0)), (1.0, (2.0, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
-    idle.keys("head", "rot", [(0, (0, 0, 0)), (1.0, (-2, 0, 4), "in_out_cubic"), (2.2, (-1, -3, 1), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
-    idle.keys("top", "rot", [(0, (0, 0, 0)), (1.0, (3, 0, 0), "in_out_cubic"), (2.3, (-1.5, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
-    idle.keys("arm_L", "rot", [(0, (0, 0, 0)), (2.2, (-4, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
-    idle.keys("hand_L", "rot", [(0, (0, 0, 0)), (2.2, (-6, 0, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
-    idle.keys("body", "pos", [(0, (0, 0, 0)), (2.2, (0, -0.004, 0), "in_out_cubic"), (3.4, (0, 0, 0), "in_out_cubic")])
+V = lambda *x: np.array(x, dtype=float)       # noqa: E731
+BLADE = unit(TIP - GUARD)                      # blade axis at rest (forward / down)
+G_OFF = V(0.065, -0.01, -0.145)               # left-hand grip (toward the butt) relative to the right wrist, in the cleaver frame
+IMPACT = 0.95
+_nu = unit(np.array([0.0, 1.0, 0.0]) - BLADE * BLADE[1] + np.array([0.0, 0.0, -0.15]))
+CLEAVER_NORMAL = np.cross(BLADE, _nu)         # blade thickness axis (lies vertical when the cleaver rests flat)
 
-    mv = Clip("Move", 0.9, loop=True)
-    mv.keys("body", "rot", [(0, (8, 0, 4)), (0.45, (10, 0, -4), "in_out_cubic"), (0.9, (8, 0, 4), "in_out_cubic")])
-    mv.keys("body", "pos", [(0, (0, 0, 0)), (0.2, (0, 0.015, 0), "out_quad"), (0.325, (0, 0, 0), "in_quad"), (0.65, (0, 0.015, 0), "out_quad"), (0.775, (0, 0, 0), "in_quad"), (0.9, (0, 0, 0))])
-    mv.keys("spine", "rot", [(0, (4, 0, 0)), (0.45, (5, 0, 0), "in_out_cubic"), (0.9, (4, 0, 0), "in_out_cubic")])
-    mv.keys("head", "rot", [(0, (0, 0, 0)), (0.45, (6, 0, 0), "in_out_cubic"), (0.9, (0, 0, 0), "in_out_cubic")])
-    mv.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.45, (14, 0, 0), "in_out_cubic"), (0.9, (0, 0, 0), "in_out_cubic")])
-    mv.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.45, (-4, 0, 0), "in_out_cubic"), (0.9, (0, 0, 0), "in_out_cubic")])
-    mv.keys("top", "rot", [(0, (0, 0, 0)), (0.45, (-8, 0, 0), "in_out_cubic"), (0.9, (0, 0, 0), "in_out_cubic")])
 
-    A = Clip("Attack", 2.1, fps=60)
-    A.keys("body", "rot", [(0, (0, 0, 0)), (0.30, (12, 0, 0), "in_out_cubic"), (0.80, (-14, 0, 0), "in_out_cubic"), (0.95, (24, 0, 0), "in_cubic"),
-                           (1.10, (24, 0, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("body", "pos", [(0, (0, 0, 0)), (0.30, (0, 0, 0.12), "in_out_cubic"), (0.80, (0, -0.02, -0.10), "in_out_cubic"), (0.95, (0, 0, 0.28), "in_cubic"),
-                           (0.98, (0, -0.025, 0.28), "out_quad"), (1.10, (0, -0.025, 0.28)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("spine", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.80, (-12, 0, 0), "in_out_cubic"), (0.95, (18, 0, 0), "in_cubic"), (1.10, (18, 0, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("head", "rot", [(0, (0, 0, 0)), (0.30, (8, 0, 0), "in_out_cubic"), (0.80, (-6, 0, 0), "in_out_cubic"), (0.95, (10, 0, 0), "in_cubic"), (1.10, (10, 0, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.30, (25, 0, 0), "in_out_cubic"), (0.80, (-88.7, 34.4, 0), "in_out_cubic"), (0.95, (-59.5, 28.5, 0), "in_cubic"), (1.10, (-59.5, 28.5, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0), "in_out_cubic"), (0.80, (-4.8, 0, 0), "in_out_cubic"), (0.95, (0.7, 0, 0), "in_cubic"), (1.10, (0.7, 0, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.80, (-62.6, -41.7, -8.4), "in_out_cubic"), (0.95, (-33.7, -46, -16.6), "in_cubic"), (1.10, (-33.7, -46, -16.6)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("hand_L", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.80, (-12.3, 0, 0), "in_out_cubic"), (0.95, (2.1, 0, 0), "in_cubic"), (1.10, (2.1, 0, 0)), (2.1, (0, 0, 0), "in_out_cubic")])
-    A.keys("top", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.80, (10, 0, 0), "in_out_cubic"), (0.95, (-4, 0, 0), "in_cubic"), (1.10, (20, 0, 0), "out_quad"), (2.1, (0, 0, 0), "in_out_cubic")])
+def _anim(rig, cape=True):
+    a = Animator(rig)
+    M.plant_feet(a)
+    if cape:
+        a.secondary(["top"], driver="chest", freq=2.0, zeta=0.30, follow=1.0, accel=0.05, max_deg=16)
+        a.secondary(["cape_1", "cape_2", "cape_3"], driver="top", freq=2.2, zeta=0.28, follow=1.3, accel=0.10, max_deg=30, decay=0.85)
+    return a
 
-    hit = Clip("HitReact", 0.4)
-    hit.keys("body", "rot", [(0, (0, 0, 0)), (0.08, (-13, 0, 0), "out_cubic"), (0.40, (-5, 0, 0), "in_out_cubic")])
-    hit.keys("body", "pos", [(0, (0, 0, 0)), (0.08, (0, 0, -0.09), "out_cubic"), (0.40, (0, 0, -0.03), "in_out_cubic")])
-    hit.keys("spine", "rot", [(0, (0, 0, 0)), (0.08, (-9, 0, 0), "out_cubic"), (0.40, (-4, 0, 0), "in_out_cubic")])
-    hit.keys("head", "rot", [(0, (0, 0, 0)), (0.08, (-16, 0, -10), "out_cubic"), (0.40, (-6, 0, -3), "in_out_cubic")])
-    hit.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.08, (22, 0, 0), "out_cubic"), (0.40, (8, 0, 0), "in_out_cubic")])
-    hit.keys("top", "rot", [(0, (0, 0, 0)), (0.08, (16, 0, 0), "out_cubic"), (0.40, (5, 0, 0), "in_out_cubic")])
 
-    vic = Clip("Victory", 1.5)
-    vic.keys("spine", "rot", [(0, (0, 0, 0)), (0.6, (-12, 0, 0), "out_cubic"), (1.5, (-12, 0, 0))])
-    vic.keys("head", "rot", [(0, (0, 0, 0)), (0.6, (-18, 0, 0), "out_cubic"), (1.5, (-18, 0, 0))])
-    vic.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.6, (-130, 0, 0), "out_back"), (1.5, (-130, 0, 0))])
-    vic.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.6, (-20, 0, 0), "out_cubic"), (1.5, (-20, 0, 0))])
-    vic.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.6, (-100, 0, 0), "out_cubic"), (1.5, (-100, 0, 0))])
-    vic.keys("body", "pos", [(0, (0, 0, 0)), (0.6, (0, 0.02, 0), "out_back"), (1.5, (0, 0.02, 0))])
-    vic.keys("top", "rot", [(0, (0, 0, 0)), (0.6, (8, 0, 0), "out_cubic"), (1.5, (8, 0, 0))])
-    T = Clip("Taunt", 1.5)           # cleaver scrape, then a hunched snarling lunge, ends at rest
-    T.keys("body", "rot", [(0, (0, 0, 0)), (0.30, (-8, 0, 0), "in_out_cubic"), (0.62, (20, 0, 0), "in_cubic"), (1.0, (18, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("body", "pos", [(0, (0, 0, 0)), (0.30, (0, -0.01, -0.05), "in_out_cubic"), (0.62, (0, -0.02, 0.16), "in_cubic"), (1.0, (0, -0.02, 0.16)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("spine", "rot", [(0, (0, 0, 0)), (0.30, (-8, 0, 0), "in_out_cubic"), (0.62, (14, 0, 0), "in_cubic"), (1.0, (12, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("head", "rot", [(0, (0, 0, 0)), (0.30, (-8, 0, 0), "in_out_cubic"), (0.62, (16, 0, 4), "in_cubic"), (0.78, (14, 6, -4), "in_out_quad"), (0.94, (16, -6, 4), "in_out_quad"), (1.1, (14, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.30, (30, 0, 0), "in_out_cubic"), (0.62, (22, 0, 0), "in_cubic"), (1.0, (26, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.62, (-30, 0, 0), "in_cubic"), (1.0, (-30, 0, 0)), (1.5, (0, 0, 0), "in_out_cubic")])
-    T.keys("top", "rot", [(0, (0, 0, 0)), (0.30, (10, 0, 0), "in_out_cubic"), (0.62, (-14, 0, 0), "in_cubic"), (0.9, (24, 0, 0), "out_quad"), (1.5, (0, 0, 0), "in_out_cubic")])
-    S = Clip("Surrender", 2.0)       # slumps, bows; the cleaver slips from his claws and clatters onto the plinth
-    S.keys("body", "rot", [(0, (0, 0, 0)), (0.7, (12, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0), "in_out_cubic")])
-    S.keys("body", "pos", [(0, (0, 0, 0)), (0.7, (0, -0.03, 0.02), "in_out_cubic"), (2.0, (0, -0.035, 0.02))])
-    S.keys("spine", "rot", [(0, (0, 0, 0)), (0.8, (16, 0, 0), "in_out_cubic"), (2.0, (18, 0, 0), "in_out_cubic")])
-    S.keys("head", "rot", [(0, (0, 0, 0)), (0.8, (26, 0, 0), "in_out_cubic"), (2.0, (32, 0, 0), "in_out_cubic")])
-    S.keys("arm_R", "rot", [(0, (0, 0, 0)), (0.35, (-6, 0, 0), "in_out_cubic"), (0.9, (12, 0, 0), "in_out_cubic"), (2.0, (16, 0, 0), "in_out_cubic")])
-    S.keys("hand_R", "rot", [(0, (0, 0, 0)), (0.9, (10, 0, 0), "in_out_cubic"), (2.0, (14, 0, 0))])
-    S.keys("arm_L", "rot", [(0, (0, 0, 0)), (0.8, (18, 0, 0), "in_out_cubic"), (2.0, (22, 0, 0))])
-    S.keys("top", "rot", [(0, (0, 0, 0)), (0.8, (20, 0, 0), "in_out_cubic"), (2.0, (16, 0, 0))])
-    rc.drop_weapon(S, rig, "weapon", 0.40, tuple(unit(TIP - GUARD)), 0.22, 0.03, (1.0, 0.0, 0.25), land_xz=(-0.05, 0.22))
-    return [idle, mv, A, hit, vic, T, S]
+def _goal(a, name):
+    return next(g for g in a.goals if g.name == name)
+
+
+def _two_hands(a, pos_keys, dir_keys, weight=None, roll=None):
+    """Two-hand cleaver grip: the RIGHT wrist follows (pos, blade direction) in chest space, the LEFT wrist is carried on the same rigid
+    cleaver frame (offset G_OFF).  `weight` blends IK vs the FK pose (0 = FK)."""
+    P = Curve(pos_keys)
+    D = M.aim(BLADE, Curve(dir_keys))
+    if roll is not None:
+        D = M.blade_roll(D, BLADE, roll)
+    gr = a.goal("ik_hand_R", ("arm_R", "hand_R", "wrist_R"), spaces=(("chest", 1.0),), pole=(-0.3, -1, -0.5), weight=weight if weight is not None else 1.0)
+    gl = a.goal("ik_hand_L", ("arm_L", "hand_L", "wrist_L"), spaces=(("chest", 1.0),), pole=(0.3, -1, -0.5), weight=weight if weight is not None else 1.0)
+    gr.pos, gr.rot = M.abs_pos(WR0, P), D
+    gl.pos = M.abs_pos(WL0, Fn(lambda t: P(t) + D(t) @ G_OFF))
+    gl.rot = Fn(lambda t: D(t))
+
+
+def clip_idle(rig):
+    a = _anim(rig)
+    M.idle(a, period=3.4, breath=1.3, shift=0.9, sway=0.008, look=1.4)
+    a.rot("head", Wave(V(0, 0, 2.5), 1 / 3.4, 0.55))          # the thrall's head lolls
+    a.rot("arm_R", Curve([(0, V(0, 0, 0)), (1.2, V(1.5, 0, 0.8), "in_out_cubic"), (2.4, V(-0.5, 0, 0)), (3.4, V(0, 0, 0), "in_out_cubic")], loop=3.4))
+    return a, 3.4, True, 30, ()
+
+
+def clip_move(rig):
+    a = _anim(rig)
+    T = 0.9
+    M.biped_gait(a, T, stride=0.03, lift=0.05, duty=0.62, bob=0.018, sway=0.016, roll=4.0, twist=8.0, lean=3.0, arm_swing=(12, 4), elbow=16,
+                 toe_off=26, strike=-10, head_stab=0.35)
+    a.rot("spine", Wave(V(2.0, 0, 0), 2 / T, 0.1))          # heavy chest drop on every footfall
+    return a, T, True, 30, ()
+
+
+def clip_hit(rig):
+    a = _anim(rig)
+    T = 0.4
+    a.pos("body", Curve([(0, V(0, 0, 0)), (0.07, V(0, -0.035, -0.08), "out_cubic"), (0.17, V(0, -0.014, -0.02), "in_out_cubic"), (0.27, V(0, -0.018, 0.012), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("body", Curve([(0, V(0, 0, 0)), (0.07, V(-9, 4, 3), "out_cubic"), (0.18, V(2, -1, 0), "in_out_cubic"), (0.28, V(-1, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("spine", Curve([(0, V(0, 0, 0)), (0.085, V(-11, 5, 4), "out_cubic"), (0.2, V(3, -2, 0), "in_out_cubic"), (0.3, V(-1.5, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("chest", Curve([(0, V(0, 0, 0)), (0.10, V(-13, 6, 5), "out_cubic"), (0.22, V(4, -3, -1), "in_out_cubic"), (0.31, V(-2, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("neck", Curve([(0, V(0, 0, 0)), (0.11, V(-14, 8, -8), "out_cubic"), (0.24, V(5, -4, 2), "in_out_cubic"), (0.33, V(-2, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("head", Curve([(0, V(0, 0, 0)), (0.12, V(-16, 10, -10), "out_cubic"), (0.26, V(6, -5, 3), "in_out_cubic"), (0.34, V(-2, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    for s, sg in (("L", 1), ("R", -1)):
+        a.rot(f"arm_{s}", Curve([(0, V(0, 0, 0)), (0.09, V(22, 0, sg * -10), "out_cubic"), (0.22, V(-6, 0, sg * 3), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+        a.rot(f"hand_{s}", Curve([(0, V(0, 0, 0)), (0.10, V(-18, 0, 0), "out_cubic"), (0.24, V(5, 0, 0), "in_out_cubic"), (T, V(0, 0, 0), "in_out_cubic")]))
+    return a, T, False, 30, ()
+
+
+def clip_attack(rig):
+    a = _anim(rig)
+    T, I = 2.1, IMPACT
+    P_REST = WR0
+    # cleaver frame in chest space: ready (.28) -> high wind-up behind the right ear (.78) -> HACK down and across, landing exactly at impactTime
+    pos = [(0, P_REST), (0.28, V(-0.10, 0.66, 0.16), "ease_in_out"), (0.45, V(-0.09, 0.80, 0.08), "ease_in_out"), (0.78, V(-0.09, 0.90, 0.03), "anticipate"),
+           (I, V(-0.10, 0.74, 0.20), "snap_in"), (1.05, V(-0.11, 0.70, 0.19), "out_quad"), (1.18, V(-0.11, 0.70, 0.19), {"tan": "flat"}),
+           (1.65, V(-0.12, 0.62, 0.17), "in_out_cubic"), (2.05, P_REST, "in_out_cubic")]
+    dirs = [(0, BLADE), (0.28, V(0.1, -0.1, 0.99), "ease_in_out"), (0.45, V(0.12, 0.5, 0.86), "ease_in_out"), (0.78, V(0.15, 0.80, -0.58), "anticipate"),
+            (I, V(-0.25, -0.55, 0.8), "snap_in"), (1.05, V(-0.33, -0.72, 0.60), "out_quad"), (1.18, V(-0.33, -0.72, 0.60), {"tan": "flat"}),
+            (1.65, V(-0.1, -0.3, 0.95), "in_out_cubic"), (2.05, BLADE, "in_out_cubic")]
+    _two_hands(a, pos, dirs, weight=step_signal([(0, 0), (0.2, 1), (1.75, 1), (2.05, 0.0)]),
+               roll=Curve([(0, V(0)), (0.78, V(-25)), (I, V(35), "snap_in"), (1.18, V(30)), (2.05, V(0), "in_out_cubic")]))
+    # kinetic chain: pelvis drives and leads, chest whips behind it, head last
+    a.pos("body", Curve([(0, V(0, 0, 0)), (0.28, V(0, -0.035, -0.045), "ease_in_out"), (0.78, V(0, -0.02, -0.06), "ease_in_out"), (I - 0.05, V(0, -0.03, 0.17), "snap_in"),
+                         (1.18, V(0, -0.03, 0.17), {"tan": "flat"}), (1.85, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("body", Curve([(0, V(0, 0, 0)), (0.28, V(4, 0, 0)), (0.78, V(-2, -8, 0), "in_out_cubic"), (I - 0.07, V(5, 10, 1), "snap_in"), (1.18, V(5, 8, 0), "out_cubic"), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("spine", Curve([(0, V(0, 0, 0)), (0.28, V(6, 0, 0)), (0.78, V(-6, -9, -1), "in_out_cubic"), (I - 0.04, V(10, 10, 1), "snap_in"), (1.18, V(9, 8, 0), "out_cubic"), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("chest", Curve([(0, V(0, 0, 0)), (0.28, V(5, 0, 0)), (0.78, V(-8, -14, -3), "in_out_cubic"), (I - 0.02, V(12, 14, 2), "snap_in"), (1.18, V(11, 11, 1), "out_cubic"), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("neck", Curve([(0, V(0, 0, 0)), (0.28, V(6, 0, 0)), (0.78, V(-6, 8, 2), "in_out_cubic"), (I, V(10, -8, 0), "snap_in"), (1.18, V(9, -6, 0), "out_cubic"), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("head", Curve([(0, V(0, 0, 0)), (0.28, V(8, 0, 0)), (0.78, V(-5, 6, 3), "in_out_cubic"), (I, V(9, -6, 0), "snap_in"), (1.18, V(8, -5, 0), "out_cubic"), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("clavicle_R", Curve([(0, V(0, 0, 0)), (0.78, V(0, 0, -9), "in_out_cubic"), (I, V(0, 0, 4), "snap_in"), (1.2, V(0, 0, 3)), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("clavicle_L", Curve([(0, V(0, 0, 0)), (0.78, V(0, 0, 5), "in_out_cubic"), (I, V(0, 0, -3), "snap_in"), (1.2, V(0, 0, -2)), (1.9, V(0, 0, 0), "in_out_cubic")]))
+    # feet: the (already advanced) left foot steps INTO the lunge during the wind-up, the right leg drives / trails
+    M.set_foot(a, "foot_L", pos=Curve([(0, V(0, 0, 0)), (0.56, V(0, 0, 0)), (0.68, V(0, 0.07, 0.07), "ease_in_out"), (0.86, V(0, 0, 0.14), "ease_in_out"), (1.3, V(0, 0, 0.14)),
+                                         (1.45, V(0, 0.06, 0.07), "ease_in_out"), (1.68, V(0, 0, 0), "ease_in_out")]),
+               rot=Curve([(0, V(0, 0, 0)), (0.56, V(0, 0, 0)), (0.64, V(22, 0, 0), "ease_in_out"), (0.78, V(-9, 0, 0), "ease_in_out"), (0.86, V(0, 0, 0), "ease_in_out"),
+                          (1.3, V(0, 0, 0)), (1.38, V(16, 0, 0), "ease_in_out"), (1.56, V(-6, 0, 0), "ease_in_out"), (1.68, V(0, 0, 0), "ease_in_out")]))
+    M.stabilize(a, "head", 0.25)
+    return a, T, False, 60, (I,)
+
+
+def clip_victory(rig):
+    a = _anim(rig)
+    T = 1.5
+    pos = [(0, WR0), (0.25, V(-0.10, 0.72, 0.12), "ease_in_out"), (0.6, V(-0.07, 1.0, 0.06), ("spring", 0.12, 1.5)), (T, V(-0.07, 1.01, 0.06), "in_out_cubic")]
+    dirs = [(0, BLADE), (0.25, V(0.1, 0.3, 0.95), "ease_in_out"), (0.6, V(0.05, 0.98, 0.2), ("spring", 0.12, 1.5)), (T, V(0.05, 0.98, 0.2))]
+    _two_hands(a, pos, dirs, weight=step_signal([(0, 0), (0.12, 1)]))
+    a.pos("body", Curve([(0, V(0, 0, 0)), (0.18, V(0, -0.03, 0), "ease_in_out"), (0.6, V(0, 0.02, 0.0), ("spring", 0.2, 1.5)), (T, V(0, 0.016, 0), "in_out_cubic")]))
+    a.rot("body", Curve([(0, V(0, 0, 0)), (0.18, V(5, 0, 0)), (0.6, V(-6, 0, 0), ("spring", 0.15, 1.5)), (T, V(-5, 0, 0), "in_out_cubic")]))
+    a.rot("spine", Curve([(0, V(0, 0, 0)), (0.18, V(8, 0, 0)), (0.6, V(-12, 0, 0), ("spring", 0.15, 1.5)), (T, V(-11, 0, 0), "in_out_cubic")]))
+    a.rot("chest", Curve([(0, V(0, 0, 0)), (0.18, V(8, 0, 0)), (0.6, V(-14, 0, 0), ("spring", 0.15, 1.5)), (T, V(-13, 0, 0), "in_out_cubic")]))
+    a.rot("neck", Curve([(0, V(0, 0, 0)), (0.6, V(-14, 0, 0), ("spring", 0.15, 1.5)), (T, V(-13, 0, 0))]))
+    a.rot("head", Curve([(0, V(0, 0, 0)), (0.6, V(-22, 0, 0), ("spring", 0.15, 1.5)), (T, V(-20, 0, 0)), ]))
+    a.rot("head", Wave(V(0, 0, 3), 3, 0.0) * Fn(lambda t: np.array([min(1.0, max(0.0, (t - 0.6) / 0.2))])))        # the howl: a tremor
+    a.rot("clavicle_R", Curve([(0, V(0, 0, 0)), (0.6, V(0, 0, -8), "out_cubic"), (T, V(0, 0, -8))]))
+    a.rot("clavicle_L", Curve([(0, V(0, 0, 0)), (0.6, V(0, 0, 8), "out_cubic"), (T, V(0, 0, 8))]))
+    return a, T, False, 30, ()
+
+
+def clip_taunt(rig):
+    """Scrape the cleaver along the plinth, then a hunched snarling lunge with a head shake; ends at rest."""
+    a = _anim(rig)
+    T = 1.5
+    pos = [(0, WR0), (0.30, V(-0.17, 0.42, 0.20), "ease_in_out"), (0.46, V(-0.17, 0.40, 0.17), "ease_in_out"), (0.62, V(-0.16, 0.42, 0.27), "snap_in"),
+           (1.0, V(-0.16, 0.45, 0.25)), (1.4, WR0, "in_out_cubic")]
+    dirs = [(0, BLADE), (0.30, V(0.1, -0.85, 0.5), "ease_in_out"), (0.46, V(0.1, -0.9, 0.35), "ease_in_out"), (0.62, V(0.1, -0.8, 0.6), "snap_in"), (1.0, V(0.1, -0.7, 0.7)), (1.4, BLADE, "in_out_cubic")]
+    P = Curve(pos); D = M.aim(BLADE, Curve(dirs))
+    gr = a.goal("ik_hand_R", ("arm_R", "hand_R", "wrist_R"), spaces=(("chest", 1.0),), pole=(-0.3, -1, -0.5), weight=step_signal([(0, 0), (0.15, 1), (1.2, 1), (1.45, 0)]))
+    gr.pos, gr.rot = M.abs_pos(WR0, P), D
+    a.pos("body", Curve([(0, V(0, 0, 0)), (0.30, V(0, -0.02, -0.05), "in_out_cubic"), (0.62, V(0, -0.03, 0.15), "snap_in"), (1.0, V(0, -0.03, 0.15)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("body", Curve([(0, V(0, 0, 0)), (0.30, V(-4, 0, 0), "in_out_cubic"), (0.62, V(10, 0, 0), "snap_in"), (1.0, V(9, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("spine", Curve([(0, V(0, 0, 0)), (0.30, V(-6, 0, 0), "in_out_cubic"), (0.62, V(14, 0, 0), "snap_in"), (1.0, V(12, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("chest", Curve([(0, V(0, 0, 0)), (0.30, V(-6, 0, 0), "in_out_cubic"), (0.62, V(14, 0, 0), "snap_in"), (1.0, V(12, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("neck", Curve([(0, V(0, 0, 0)), (0.30, V(-8, 0, 0)), (0.62, V(14, 0, 4), "snap_in"), (0.78, V(13, 8, -4), "in_out_quad"), (0.94, V(14, -8, 4), "in_out_quad"), (1.1, V(12, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("head", Curve([(0, V(0, 0, 0)), (0.30, V(-8, 0, 0)), (0.62, V(16, 0, 4), "snap_in"), (0.78, V(14, 10, -5), "in_out_quad"), (0.94, V(16, -10, 5), "in_out_quad"), (1.1, V(14, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("arm_L", Curve([(0, V(0, 0, 0)), (0.62, V(-30, 0, 0), "snap_in"), (1.0, V(-28, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    a.rot("hand_L", Curve([(0, V(0, 0, 0)), (0.62, V(-35, 0, 0), "snap_in"), (1.0, V(-30, 0, 0)), (1.4, V(0, 0, 0), "in_out_cubic")]))
+    M.set_foot(a, "foot_L", pos=Curve([(0, V(0, 0, 0)), (0.44, V(0, 0, 0)), (0.54, V(0, 0.05, 0.05), "ease_in_out"), (0.64, V(0, 0, 0.10), "ease_in_out"), (1.0, V(0, 0, 0.10)), (1.12, V(0, 0.04, 0.05), "ease_in_out"), (1.3, V(0, 0, 0), "ease_in_out")]))
+    return a, T, False, 30, ()
+
+
+def clip_surrender(rig):
+    """Slump, the cleaver slips from the claws (physics: fall, bounce, settle), then sink onto BOTH KNEES (shins back on the plinth), head bowed."""
+    a = _anim(rig)
+    T = 2.0
+    sk = a.sk
+    l1 = {s: float(np.linalg.norm(sk.rest[sk.ix[f"shin_{s}"]] - sk.rest[sk.ix[f"thigh_{s}"]])) for s in "LR"}
+    l2 = {s: float(np.linalg.norm(sk.rest[sk.ix[f"foot_{s}"]] - sk.rest[sk.ix[f"shin_{s}"]])) for s in "LR"}
+    KNEE_Y, PELV_Z = 0.262, 0.0
+    hip_y = KNEE_Y + 0.5 * (l1["L"] + l1["R"])
+    drop = hip_y - JOINTS["hip_L"][1]
+    a.pos("body", Curve([(0, V(0, 0, 0)), (0.5, V(0, -0.015, 0.0), "ease_in_out"), (0.9, V(0, -0.03, 0.0), "ease_in_out"), (1.55, V(0, -drop, PELV_Z), "in_out_cubic"),
+                         (1.78, V(0, -drop + 0.006, PELV_Z), "out_cubic"), (T, V(0, -drop, PELV_Z), "in_out_cubic")]))
+    for s, lg in (("L", "foot_L"), ("R", "foot_R")):
+        kz = JOINTS[f"hip_{s}"][2] + PELV_Z + JOINTS[f"knee_{s}"][2] - JOINTS[f"hip_{s}"][2] * 0 - (0.0)
+        kz = JOINTS[f"hip_{s}"][2] + PELV_Z + 0.06
+        ank = V(0, 0.2655 - JOINTS[f"ankle_{s}"][1], (kz - l2[s]) - JOINTS[f"ankle_{s}"][2])
+        M.set_foot(a, lg, pos=Curve([(0, V(0, 0, 0)), (0.7, V(0, 0, 0), "ease_in_out"), (1.15, ank + V(0, 0.05, 0.1), "ease_in_out"), (1.55, ank, "in_out_cubic"), (T, ank)]),
+                   rot=Curve([(0, V(0, 0, 0)), (0.7, V(0, 0, 0)), (1.15, V(90, 0, 0), "ease_in_out"), (1.55, V(172, 0, 0), "in_out_cubic"), (T, V(172, 0, 0))]))
+    a.rot("body", Curve([(0, V(0, 0, 0)), (0.9, V(3, 0, 0), "ease_in_out"), (1.55, V(3, 0, 0), "in_out_cubic"), (T, V(3, 0, 0))]))
+    a.rot("spine", Curve([(0, V(0, 0, 0)), (0.8, V(8, 0, 0), "ease_in_out"), (1.6, V(10, 0, 1), "in_out_cubic"), (T, V(11, 0, 1), "in_out_cubic")]))
+    a.rot("chest", Curve([(0, V(0, 0, 0)), (0.8, V(6, 0, 0), "ease_in_out"), (1.7, V(8, 0, 0), "in_out_cubic"), (T, V(9, 0, 0), "in_out_cubic")]))
+    a.rot("neck", Curve([(0, V(0, 0, 0)), (1.0, V(10, 0, 0), "in_out_cubic"), (T, V(15, 0, 0), "in_out_cubic")]))
+    a.rot("head", Curve([(0, V(0, 0, 0)), (1.0, V(12, 0, 0), "in_out_cubic"), (T, V(18, 2, 0), "in_out_cubic")]))
+    a.rot("arm_R", Curve([(0, V(0, 0, 0)), (0.35, V(-6, 0, 0), "in_out_cubic"), (0.9, V(12, 0, 0), "in_out_cubic"), (T, V(16, 0, 0), "in_out_cubic")]))
+    a.rot("hand_R", Curve([(0, V(0, 0, 0)), (0.9, V(8, 0, 0), "in_out_cubic"), (T, V(12, 0, 0))]))
+    a.rot("arm_L", Curve([(0, V(0, 0, 0)), (0.8, V(14, 0, 0), "in_out_cubic"), (T, V(20, 0, 0))]))
+    a.rot("clavicle_R", Curve([(0, V(0, 0, 0)), (1.0, V(0, 0, 4), "in_out_cubic"), (T, V(0, 0, 5))]))
+    a.rot("clavicle_L", Curve([(0, V(0, 0, 0)), (1.0, V(0, 0, -4), "in_out_cubic"), (T, V(0, 0, -5))]))
+    M.release_weapon(a, "weapon", 0.42, 0.22, 0.03, BLADE, (1.0, 0.0, 0.25), land_xz=(-0.05, 0.22), up_local=CLEAVER_NORMAL)
+    return a, T, False, 30, ()
+
+
+def make_clips(rig):
+    out = []
+    for name, fn in (("Idle", clip_idle), ("Move", clip_move), ("Attack", clip_attack), ("HitReact", clip_hit), ("Victory", clip_victory),
+                     ("Taunt", clip_taunt), ("Surrender", clip_surrender)):
+        a, dur, loop, fps, keep = fn(rig)
+        out.append(a.bake(name, dur, loop=loop, fps=fps, keep_times=keep))
+    return out
 
 
 # ======================================================================================= build
