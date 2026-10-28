@@ -380,4 +380,6 @@ export interface GameModeConfig {
   /** vs-ai: human side. */
   playerSide: Side;
   aiLevel: AiLevel;
+  /** Computer strength in Elo (preferred over aiLevel when present). */
+  aiElo?: number;
 }

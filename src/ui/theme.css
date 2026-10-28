@@ -371,3 +371,42 @@ a:focus-visible { outline: 1px solid var(--ui-text); outline-offset: 3px; }
 #ui-root > .tip { pointer-events: none; }
 
 .journal .empty { grid-column: 1 / -1; }
+
+/* ---------- Elo: foe tiers, fine-tune stepper, rating readouts */
+.cards.seven { gap: 0.9vw; padding: 0 2vw; }
+.cards.seven .card { width: min(11rem, 12.6vw); height: min(25rem, 50vh); }
+.cards.seven .card .nm { font-size: 1.45rem; }
+.cards.seven .card .ds { font-size: 0.85rem; -webkit-line-clamp: 5; }
+.cards.seven .card .tg { font-size: 0.7rem; letter-spacing: 0.12em; }
+.card .elo { font: 400 2.1rem/1 var(--ui-font-display); letter-spacing: 0.06em; color: #f1e9d6; }
+.card.t0 { --tint: #1c211b; --glyph: #8f9a86; } .card.t1 { --tint: #1b2420; --glyph: #86a592; }
+.card.t2 { --tint: #1d2330; --glyph: #8fa2c4; } .card.t3 { --tint: #2a2438; --glyph: #a597c8; }
+.card.t4 { --tint: #34231a; --glyph: #cf9a6a; } .card.t5 { --tint: #3b0f12; --glyph: #d4564f; }
+.card.t6 { --tint: #2b0a0e; --glyph: #e0b45a; }
+.fine { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; width: min(36rem, 92vw); }
+.fine .row { width: 100%; }
+.fine .fine-note { margin: 0; font: italic 400 1.05rem var(--ui-font-script); color: var(--ui-text-dim); text-align: center; }
+.fine .btn { min-width: 14rem; }
+.turn .foe { font: 400 0.82rem/1.25 var(--ui-font-display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ui-text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .rating { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.7rem; margin: 0.9rem 0 0; font-size: 1rem; color: var(--ui-text-dim); }
+.menu .rating .rl { letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.85rem; }
+.menu .rating .rv { font: 400 1.7rem/1 var(--ui-font-display); letter-spacing: 0.06em; color: #f4ecd8; }
+.menu .rating .rn { font-style: italic; color: var(--ui-text-faint); }
+.over .rate { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0.2rem 0.9rem; padding: 0 1rem; color: var(--ui-text-dim); }
+.over .rate .rl { letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.9rem; }
+.over .rate .rv { font: 400 clamp(1.8rem, 4vw, 2.8rem)/1 var(--ui-font-display); letter-spacing: 0.06em; color: #f4ecd8; min-width: 5ch; }
+.over .rate .rd { font: 400 1.4rem/1 var(--ui-font-display); letter-spacing: 0.08em; }
+.over .rate.up .rd { color: #8fd08a; } .over .rate.down .rd { color: var(--ui-crimson-text); }
+.over .rate .rn { flex-basis: 100%; font: italic 400 1rem var(--ui-font-script); color: var(--ui-text-faint); }
+@media (max-aspect-ratio: 1/1) {
+  .cards.seven { gap: 0.6rem; padding: 0 1rem; }
+  .cards.seven .card { width: 29vw; height: min(17vh, 11rem); }
+  .cards.seven .card .ds, .cards.seven .card .tg { display: none; }
+  .cards.seven .card .elo { font-size: 1.5rem; } .cards.seven .card .nm { font-size: 1.15rem; }
+  .cards.seven .card .big { top: 6%; max-height: 38%; }
+}
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  .cards.seven .card { height: 40vh; } .cards.seven .card .ds, .cards.seven .card .tg { display: none; }
+  .cards.seven .card .elo { font-size: 1.5rem; } .cards.seven .card .nm { font-size: 1.1rem; }
+  .fine { gap: 0.2rem; } .fine .fine-note { font-size: 0.9rem; }
+}

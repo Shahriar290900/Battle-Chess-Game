@@ -1,23 +1,12 @@
 // AI opponent: Stockfish 19 lite (single-thread WASM) in a Worker, with a built-in TS fallback.
 import { Chess } from 'chess.js';
-import type { AiLevel, AiMove, AiPlayer } from '../../contracts';
-import { fallbackMove, randomMove, toAiMove } from './fallback';
-
-// TEMP (lead, contract v1.4): map an Elo number onto the legacy levels until the elo agent rewrites this module.
-const toLevel = (l: number | AiLevel): AiLevel =>
-  typeof l !== 'number' ? l : l < 900 ? 'easy' : l < 1500 ? 'medium' : l < 2200 ? 'hard' : 'master';
+import type { AiMove, AiPlayer } from '../../contracts';
+import { fallbackMove, toAiMove } from './fallback';
+import { chooseWeakMove, collectCandidates, engineProfile, goCommand, toElo, uciSetup, type EngineProfile } from './strength';
 
 const ENGINE_FILE = 'stockfish-19-lite-single';
 const INIT_TIMEOUT_MS = 8000;
 const MIN_RESPONSE_MS = 600;
-
-interface LevelCfg { skill: number; go: string; minMs: number; blunder: number }
-const LEVELS: Record<AiLevel, LevelCfg> = {
-  easy: { skill: 1, go: 'go movetime 150', minMs: MIN_RESPONSE_MS, blunder: 0.3 },
-  medium: { skill: 8, go: 'go movetime 400', minMs: MIN_RESPONSE_MS, blunder: 0 },
-  hard: { skill: 15, go: 'go movetime 1000', minMs: MIN_RESPONSE_MS, blunder: 0 },
-  master: { skill: 20, go: 'go movetime 2000', minMs: MIN_RESPONSE_MS, blunder: 0 },
-};
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -30,6 +19,7 @@ export function createAiPlayer(): AiPlayer {
   let queue: Promise<unknown> = Promise.resolve();
   let staleBestmoves = 0; // bestmove lines still owed from stopped searches
   let lineListener: ((line: string) => void) | null = null;
+  let infoSink: ((line: string) => void) | null = null; // collects `info` lines during a search (MultiPV picking)
   let staleWaiter: (() => void) | null = null;
   let searching = false;
   let abortWait: (() => void) | null = null;
@@ -38,6 +28,7 @@ export function createAiPlayer(): AiPlayer {
   function send(cmd: string) { worker?.postMessage(cmd); }
 
   function onLine(line: string) {
+    if (line.startsWith('info')) { if (staleBestmoves === 0) infoSink?.(line); return; }
     if (line.startsWith('bestmove')) {
       if (staleBestmoves === 0) searching = false;
     }
@@ -114,39 +105,47 @@ export function createAiPlayer(): AiPlayer {
     return initPromise;
   }
 
-  async function searchStockfish(fen: string, cfg: LevelCfg, gen: number): Promise<string> {
+  /** One search with the profile's options; returns the engine's bestmove plus the deepest MultiPV lines. */
+  async function searchStockfish(fen: string, p: EngineProfile, gen: number): Promise<{ best: string; infos: string[] }> {
     if (staleBestmoves > 0) {
       await new Promise<void>((r) => { staleWaiter = r; setTimeout(r, 3000); });
       staleBestmoves = 0;
     }
     if (gen !== generation) throw new Error('cancelled');
-    send(`setoption name Skill Level value ${cfg.skill}`);
+    for (const cmd of uciSetup(p)) send(cmd);
     send(`position fen ${fen}`);
+    const infos: string[] = [];
+    infoSink = p.mode === 'shallow' ? (l) => infos.push(l) : null;
     const done = waitFor((l) => l.startsWith('bestmove'), 15000);
     searching = true;
-    send(cfg.go);
-    const line = await done;
-    return line.split(/\s+/)[1] ?? '';
+    send(goCommand(p));
+    try {
+      const line = await done;
+      return { best: line.split(/\s+/)[1] ?? '', infos };
+    } finally {
+      infoSink = null;
+    }
   }
 
-  async function run(fen: string, level: AiLevel, gen: number): Promise<AiMove> {
+  async function run(fen: string, elo: number, gen: number): Promise<AiMove> {
     await init();
     if (gen !== generation || disposed) throw new Error('cancelled');
-    const cfg = LEVELS[level];
+    const profile = engineProfile(elo);
     const started = Date.now();
     const legal = new Chess(fen).moves({ verbose: true });
     if (legal.length === 0) throw new Error('no legal moves');
+    const uciOf = (x: (typeof legal)[number]) => `${x.from}${x.to}${x.promotion ?? ''}`;
 
     let move: AiMove | null = null;
-    if (cfg.blunder && Math.random() < cfg.blunder) {
-      move = randomMove(fen); // deliberate beginner mistake
-    } else if (!useFallback && worker) {
+    if (!useFallback && worker) {
       try {
-        const best = await searchStockfish(fen, cfg, gen);
-        const m = legal.find((x) => x.from === best.slice(0, 2) && x.to === best.slice(2, 4) &&
-          (best.length < 5 || x.promotion === best[4]));
-        if (m) move = toAiMove(m);
-        else if (best.length >= 4) move = null; // illegal/none -> fallback below
+        const { best, infos } = await searchStockfish(fen, profile, gen);
+        let pick = best;
+        if (profile.mode === 'shallow') {
+          pick = chooseWeakMove(collectCandidates(infos, profile.multiPV), legal.map(uciOf), best, profile, Math.random);
+        }
+        const m = legal.find((x) => uciOf(x) === pick) ?? legal.find((x) => x.from === pick.slice(0, 2) && x.to === pick.slice(2, 4) && (pick.length < 5 || x.promotion === pick[4]));
+        if (m) move = toAiMove(m); // illegal/none -> fallback below
       } catch (e) {
         if ((e as Error).message === 'cancelled') throw e;
         console.warn('[ai] engine search failed, using built-in engine:', e);
@@ -156,9 +155,9 @@ export function createAiPlayer(): AiPlayer {
     if (gen !== generation || disposed) throw new Error('cancelled');
     if (!move) {
       await sleep(0); // let the UI paint before the synchronous search
-      move = fallbackMove(fen, level);
+      move = fallbackMove(fen, elo);
     }
-    const wait = cfg.minMs - (Date.now() - started);
+    const wait = MIN_RESPONSE_MS - (Date.now() - started);
     if (wait > 0) await sleep(wait);
     if (gen !== generation || disposed) throw new Error('cancelled');
     return move;
@@ -170,7 +169,7 @@ export function createAiPlayer(): AiPlayer {
       const gen = generation;
       const job = queue.then(() => new Promise<AiMove>((resolve, reject) => {
         rejectPending = reject;
-        run(fen, toLevel(level), gen).then(resolve, reject);
+        run(fen, toElo(level), gen).then(resolve, reject);
       }));
       queue = job.catch(() => undefined);
       // A cancel while queued rejects when its turn comes (gen mismatch).

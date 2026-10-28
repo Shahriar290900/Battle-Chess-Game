@@ -1,8 +1,10 @@
 // Main menu (over the live attract-mode board) and the in-game pause overlay.
 import type { SettingsStore } from '../contracts';
 import type { GameController } from '../core/game';
+import type { RatingStore } from '../core/rating';
+import { PROVISIONAL_GAMES } from '../core/rating';
 import { h, clear } from './dom';
-import { button, setLabel } from './controls';
+import { button, setLabel, tipOn } from './controls';
 import type { Screen } from './screen';
 import { isCoarse } from './screen';
 
@@ -34,19 +36,28 @@ function confirmButton(label: string, confirmLabel: string, run: () => void, tip
   return b;
 }
 
-export function createMainMenu(controller: GameController, settings: SettingsStore, hd: MenuHandlers): Screen {
+export function createMainMenu(controller: GameController, settings: SettingsStore, hd: MenuHandlers, rating: RatingStore): Screen {
   const list = h('div', { class: 'menu-list', role: 'menu' });
   const note = h('div', { class: 'note fr', hidden: true });
   const foot = h('div', { class: 'menu-foot' },
     h('span', {}, h('i', { class: 'kbd', text: 'Up' }), h('i', { class: 'kbd', text: 'Down' }), 'Navigate'),
     h('span', {}, h('i', { class: 'kbd', text: 'Enter' }), 'Select'), h('span', {}, h('i', { class: 'kbd', text: 'Esc' }), 'Back'));
   if (isCoarse()) foot.hidden = true;
+  const ratingVal = h('b', { class: 'rv' }), ratingNote = h('small', { class: 'rn' });
+  const ratingEl = tipOn(h('p', { class: 'rating', role: 'status' }, h('span', { class: 'rl', text: 'Your rating' }), ratingVal, ratingNote),
+    `Your rating|Your Elo rating from games against the computer, kept on this device. A "?" means provisional: it moves faster during your first ${PROVISIONAL_GAMES} rated games. Games with take-backs do not count.`);
   const el = h('div', { class: 'scr menu in', role: 'dialog', 'aria-label': 'Main menu' },
     h('div', { class: 'col' },
-      h('div', { class: 'logo-block' }, h('h1', { class: 'ttl' }, 'Battle', h('br'), 'Chess'), h('p', { class: 'kick', text: 'Emberhold versus the Rime Host' }), h('div', { class: 'rule' })),
+      h('div', { class: 'logo-block' }, h('h1', { class: 'ttl' }, 'Battle', h('br'), 'Chess'), h('p', { class: 'kick', text: 'Emberhold versus the Rime Host' }), h('div', { class: 'rule' }), ratingEl),
       list, note), foot);
+  function renderRating() {
+    const r = rating.current();
+    ratingVal.textContent = r.label;
+    ratingNote.textContent = r.provisional ? `Provisional · ${r.rated}/${PROVISIONAL_GAMES} games` : `${r.rated} rated games`;
+  }
 
   function build() {
+    renderRating();
     clear(list);
     const s = controller.snapshot();
     const running = gameRunning(controller);
@@ -72,6 +83,7 @@ export function createMainMenu(controller: GameController, settings: SettingsSto
     }
   }
   settings.subscribe((_, k) => { if (k === 'tutorialSeen' && !el.hidden) build(); });
+  rating.subscribe(() => { if (!el.hidden) renderRating(); });
   return {
     el,
     onShow: build,

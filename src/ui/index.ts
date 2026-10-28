@@ -2,6 +2,7 @@
 // routing (Esc / Android back / shortcuts) and keyboard + gamepad navigation.
 import type { AudioBus, EventBus, GameModeConfig, SettingsStore } from '../contracts';
 import type { GameController } from '../core/game';
+import { attachRatingTracker, createRatingStore, type RatingStore } from '../core/rating';
 import { createCredits, createHowTo } from './pages';
 import { createFlow } from './flow';
 import { createGameOverPanel, type GameOverPanel, type PromotionPicker } from './endgame';
@@ -24,7 +25,10 @@ export interface UiDeps {
   promotion: PromotionPicker;
   /** King portraits (filled in during loading; read lazily). */
   portraits(): Portraits;
-  onStart(config: GameModeConfig): void;
+  /** `aiElo` (vs-ai) is the chosen computer strength; passing it through to `controller.newGame` makes the game rated. */
+  onStart(config: GameModeConfig & { aiElo?: number }): void;
+  /** Local player rating (defaults to the localStorage-backed store). */
+  rating?: RatingStore;
   /** Learn area (src/learn), when present. May return a promise that settles when the lesson closes. */
   learn?: { open(kind: 'tutorial' | 'howto' | 'library'): void | Promise<unknown> };
 }
@@ -34,6 +38,7 @@ export interface Ui {
   hud: Hud;
   promotion: PromotionPicker;
   gameOver: GameOverPanel;
+  rating: RatingStore;
   showMenu(): void;
   openSettings(): void;
   /** Android back / Esc. Returns true if the UI consumed it. */
@@ -44,6 +49,8 @@ export interface Ui {
 
 export function createUi(d: UiDeps): Ui {
   const { controller, settings, promotion, loading } = d;
+  const rating = d.rating ?? createRatingStore();
+  const ratingTracker = attachRatingTracker(controller, d.bus, rating); // before the game-over overlay handler below
   let overlayTimer = 0;
   const stack: Screen[] = [];
   const top = () => stack[stack.length - 1] ?? null;
@@ -75,7 +82,7 @@ export function createUi(d: UiDeps): Ui {
   };
 
   const flow = createFlow({
-    settings, portraits: d.portraits,
+    settings, rating, portraits: d.portraits,
     start: (c) => { clearAll(); gameOver.close(); d.onStart(c); },
     exit: () => pop(),
   });
@@ -100,7 +107,7 @@ export function createUi(d: UiDeps): Ui {
     learnAvailable,
     beginLesson: () => openLearn('tutorial'),
   };
-  const menu = createMainMenu(controller, settings, handlers);
+  const menu = createMainMenu(controller, settings, handlers, rating);
   const pause = createPause(controller, handlers);
 
   const hud = createHud(controller, settings, {
@@ -110,7 +117,7 @@ export function createUi(d: UiDeps): Ui {
     onSkip: () => controller.skip(),
   });
   const gameOver = createGameOverPanel({
-    onRematch: () => { const m = controller.gameMode; if (m) d.onStart({ ...m }); },
+    onRematch: () => { const m = controller.gameMode; if (m) d.onStart({ ...m, aiElo: controller.ratedElo ?? undefined }); },
     onMenu: () => only(menu),
     onToggle: (o) => hud.setSuspended(o || stack.length > 0),
   });
@@ -123,13 +130,14 @@ export function createUi(d: UiDeps): Ui {
 
   // Game-over overlay appears shortly after the final sequence.
   d.bus.on('game:over', (end) => {
+    if (gameOver.isOpen) return; // the controller may announce the same ending twice
     clearTimeout(overlayTimer);
-    overlayTimer = window.setTimeout(() => { if (controller.snapshot().result && !top()) gameOver.show(end, controller.gameMode); }, 250);
+    overlayTimer = window.setTimeout(() => { if (controller.snapshot().result && !top()) gameOver.show(end, controller.gameMode, ratingTracker.last(), rating); }, 250);
   });
   d.bus.on('game:start', () => { clearTimeout(overlayTimer); gameOver.close(); });
 
   const ui: Ui = {
-    loading, hud, promotion, gameOver,
+    loading, hud, promotion, gameOver, rating,
     showMenu: () => only(menu),
     openSettings: () => { if (!top()) push(settingsScreen); },
     get modalOpen() { return stack.length > 0 || promotion.isOpen || gameOver.isOpen; },

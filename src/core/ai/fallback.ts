@@ -3,6 +3,7 @@ import { Chess } from 'chess.js';
 import type { Move, PieceSymbol } from 'chess.js';
 import type { AiLevel, AiMove } from '../../contracts';
 import type { PromotionRole } from '../../contracts';
+import { interpolate, softmaxPick, toElo, type Rng } from './strength';
 
 const PROMO: Record<string, PromotionRole> = { q: 'queen', r: 'rook', b: 'bishop', n: 'knight' };
 const VALUE: Record<PieceSymbol, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
@@ -89,43 +90,68 @@ function negamax(g: Chess, depth: number, alpha: number, beta: number, ply: numb
   return best;
 }
 
-const LEVEL: Record<AiLevel, { depth: number; ms: number; noise: number; blunder: number }> = {
-  easy: { depth: 1, ms: 150, noise: 60, blunder: 0.25 },
-  medium: { depth: 2, ms: 600, noise: 15, blunder: 0 },
-  hard: { depth: 3, ms: 1500, noise: 0, blunder: 0 },
-  master: { depth: 3, ms: 2000, noise: 0, blunder: 0 },
-};
+export interface FallbackProfile { elo: number; depth: number; ms: number; temperatureCp: number; randomMoveProb: number }
+
+// [elo, depth, max ms, softmax temperature (cp), p(random legal move)]. Same idea as the Stockfish table in strength.ts:
+// shallow + sloppy at the bottom, deeper + exact at the top (the TS search tops out around depth 4 in the time budget).
+const ANCHORS: ReadonlyArray<readonly number[]> = [
+  [400, 1, 60, 300, 0.4],
+  [700, 1, 80, 180, 0.22],
+  [1000, 2, 150, 100, 0.1],
+  [1300, 2, 250, 60, 0.04],
+  [1600, 3, 400, 30, 0],
+  [2000, 3, 800, 12, 0],
+  [2400, 4, 1500, 0, 0],
+  [3000, 4, 2500, 0, 0],
+];
+
+export function fallbackProfile(level: number | AiLevel): FallbackProfile {
+  const elo = toElo(level);
+  const [depth, ms, temp, rand] = interpolate(ANCHORS, elo);
+  return { elo, depth: Math.round(depth), ms: Math.round(ms), temperatureCp: Math.round(temp), randomMoveProb: Math.round(rand * 1000) / 1000 };
+}
 
 export function toAiMove(m: Move): AiMove {
   return { from: m.from, to: m.to, promotion: m.promotion ? PROMO[m.promotion] : undefined };
 }
 
-/** Random legal move (used for deliberate easy-mode mistakes). */
-export function randomMove(fen: string): AiMove {
+/** Random legal move (used for deliberate beginner mistakes and as the last resort). */
+export function randomMove(fen: string, rng: Rng = Math.random): AiMove {
   const moves = new Chess(fen).moves({ verbose: true });
   if (!moves.length) throw new Error('no legal moves');
-  return toAiMove(moves[Math.floor(Math.random() * moves.length)]);
+  return toAiMove(moves[Math.floor(rng() * moves.length)]);
 }
 
-/** Synchronous best-move search. Throws if the position has no legal moves. */
-export function fallbackMove(fen: string, level: AiLevel): AiMove {
-  const cfg = LEVEL[level];
+export interface FallbackOptions {
+  rng?: Rng;
+  /** Scales the per-move time budget (tests use < 1 to keep games quick). */
+  msScale?: number;
+  /** Caps the search depth (tests: keeps games deterministic and quick without depending on the clock). */
+  maxDepth?: number;
+}
+
+const SCORE_CLAMP = 1500;
+
+/** Synchronous best-move search at a given Elo (or legacy level). Throws if the position has no legal moves. */
+export function fallbackMove(fen: string, level: number | AiLevel, opts: FallbackOptions = {}): AiMove {
+  const cfg = fallbackProfile(level);
+  const rng = opts.rng ?? Math.random;
   const g = new Chess(fen);
   const root = order(g.moves({ verbose: true }));
   if (root.length === 0) throw new Error('no legal moves');
-  if (cfg.blunder && Math.random() < cfg.blunder) return toAiMove(root[Math.floor(Math.random() * root.length)]);
+  if (cfg.randomMoveProb && rng() < cfg.randomMoveProb) return toAiMove(root[Math.floor(rng() * root.length)]);
 
-  const ctx: Ctx = { deadline: Date.now() + cfg.ms, nodes: 0 };
-  let bestMoves = [root[0]];
-  // iterative deepening; keep last completed iteration if time runs out
-  for (let d = 1; d <= cfg.depth; d++) {
+  const exact = cfg.temperatureCp > 0; // softmax needs real scores for every root move
+  const ctx: Ctx = { deadline: Date.now() + cfg.ms * (opts.msScale ?? 1), nodes: 0 };
+  let last: { m: Move; s: number }[] = [{ m: root[0], s: 0 }];
+  // iterative deepening; keep the last completed iteration if time runs out
+  for (let d = 1; d <= Math.min(cfg.depth, opts.maxDepth ?? cfg.depth); d++) {
     const scored: { m: Move; s: number }[] = [];
     try {
       let alpha = -Infinity;
       for (const m of root) {
         g.move(m);
-        // with noise we need exact-ish scores, so don't narrow the window fully
-        const s = -negamax(g, d - 1, -Infinity, cfg.noise ? Infinity : -alpha, 1, ctx);
+        const s = -negamax(g, d - 1, -Infinity, exact ? Infinity : -alpha, 1, ctx);
         g.undo();
         scored.push({ m, s });
         if (s > alpha) alpha = s;
@@ -137,12 +163,12 @@ export function fallbackMove(fen: string, level: AiLevel): AiMove {
       break;
     }
     scored.sort((a, b) => b.s - a.s);
-    const top = scored[0].s;
-    bestMoves = scored.filter((x) => x.s >= top - cfg.noise).map((x) => x.m);
+    last = scored;
     // float best to front for next iteration's ordering
     root.splice(root.indexOf(scored[0].m), 1);
     root.unshift(scored[0].m);
-    if (top > MATE / 2) break;
+    if (scored[0].s > MATE / 2) break;
   }
-  return toAiMove(bestMoves[Math.floor(Math.random() * bestMoves.length)]);
+  const pool = exact ? last.map((x) => ({ m: x.m, cp: Math.max(-SCORE_CLAMP, Math.min(SCORE_CLAMP, x.s)) })) : [{ m: last[0].m, cp: 0 }];
+  return toAiMove(softmaxPick(pool, cfg.temperatureCp, rng).m);
 }

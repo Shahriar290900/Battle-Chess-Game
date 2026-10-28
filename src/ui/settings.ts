@@ -2,8 +2,9 @@
 // a right panel of `label  << < value > >>` rows. Everything works with mouse, touch and keyboard (arrows change the
 // focused row, Q/E switch category). Every row carries a tooltip explaining the option and its performance cost.
 import type { AudioBus, GraphicsSettings, HighlightStyle, QualityTier, Settings, SettingsStore } from '../contracts';
-import { DEFAULT_SETTINGS } from '../contracts';
-import { choosePreset, patchGraphics } from '../core/settings';
+import { AI_ELO_MAX, AI_ELO_MIN, DEFAULT_SETTINGS } from '../contracts';
+import { tierForElo } from '../core/ai/strength';
+import { AI_ELO_STEP, choosePreset, patchGraphics } from '../core/settings';
 import { h } from './dom';
 import { actionRow, backHint, button, optionRow, rangeRow, toggleRow, type Row } from './controls';
 import type { Screen } from './screen';
@@ -108,8 +109,8 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     'Rotate board|In pass-and-play the camera turns to face each player. Same as Camera: Follow turn.'));
   add('gameplay', toggleRow('Move list', () => S.get().showMoveList, set('showMoveList'), undefined, 'Move list|A slim journal of moves beside the board.'));
   add('gameplay', toggleRow('Colour-blind mode', () => S.get().colorBlind, set('colorBlind'), undefined, 'Colour-blind mode|Marks captures and checks with shapes as well as colour.'));
-  add('gameplay', optionRow<Settings['aiLevel']>('Computer level', [{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }, { value: 'master', label: 'Master' }], () => S.get().aiLevel, set('aiLevel'), undefined,
-    'Computer level|How strong the computer plays. Master thinks longest and is slowest on weak devices.'));
+  add('gameplay', rangeRow('Computer strength (Elo)', AI_ELO_MIN, AI_ELO_MAX, AI_ELO_STEP, () => S.get().aiElo, set('aiElo'), (v) => `${v} \u00b7 ${tierForElo(v).name}`,
+    'Computer strength|Rating of the computer opponent, 400 to 3000 in steps of 50 (Squire 400, Footman 800, Knight 1200, Captain 1600, Champion 2000, Warlord 2400, Grandmaster 2800). Higher ratings think longer and are slower on weak devices. Used for the next game you start.'));
   const styles: Array<{ value: HighlightStyle; label: string }> = [{ value: 'glow', label: 'Glow' }, { value: 'brackets', label: 'Brackets' }, { value: 'tint', label: 'Tint' }, { value: 'runes', label: 'Runes' }];
   add('gameplay', optionRow('Tile highlights', styles, () => S.get().highlightStyle, set('highlightStyle'), undefined,
     'Tile highlights|How legal moves and the selected piece are marked on the board. Glow: soft light. Brackets: corner marks. Tint: flat wash. Runes: glowing rings.'));

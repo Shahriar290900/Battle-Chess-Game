@@ -42,6 +42,45 @@ describe('settings store', () => {
   });
 });
 
+describe('computer strength settings', () => {
+  const KEY = 'battle-chess.settings.v1';
+  it('migrates a legacy aiLevel to aiElo once', () => {
+    const st = memStorage({ [KEY]: JSON.stringify({ aiLevel: 'hard' }) });
+    const a = createSettingsStore({ storage: st });
+    expect(a.get().aiElo).toBe(1800);
+    expect(a.get().aiLevel).toBe('hard');
+    a.set('cameraMode', 'top'); // persists the migrated value
+    expect(JSON.parse(st.getItem(KEY)!).aiElo).toBe(1800);
+    a.set('aiElo', 600);
+    const b = createSettingsStore({ storage: st });
+    expect(b.get().aiElo).toBe(600); // the old level no longer overrides
+    for (const [lvl, elo] of [['easy', 600], ['medium', 1200], ['master', 2600]] as const) {
+      expect(createSettingsStore({ storage: memStorage({ [KEY]: JSON.stringify({ aiLevel: lvl }) }) }).get().aiElo).toBe(elo);
+    }
+  });
+  it('an explicit aiElo wins over aiLevel; missing both keeps the default', () => {
+    expect(createSettingsStore({ storage: memStorage({ [KEY]: JSON.stringify({ aiLevel: 'easy', aiElo: 2250 }) }) }).get().aiElo).toBe(2250);
+    expect(createSettingsStore({ storage: memStorage({ [KEY]: '{}' }) }).get().aiElo).toBe(DEFAULT_SETTINGS.aiElo);
+  });
+  it('clamps and snaps aiElo to the 50-point grid', () => {
+    const s = createSettingsStore({ storage: null });
+    s.set('aiElo', 99999); expect(s.get().aiElo).toBe(3000);
+    s.set('aiElo', 10); expect(s.get().aiElo).toBe(400);
+    s.set('aiElo', 1333); expect(s.get().aiElo).toBe(1350);
+    s.set('aiElo', Number.NaN); expect(s.get().aiElo).toBe(DEFAULT_SETTINGS.aiElo);
+    s.set('aiElo', 2400); expect(s.get().aiLevel).toBe('master');
+  });
+  it('keeps valid contrast, theme and piece-set values (and rejects bad ones)', () => {
+    const st = memStorage({ [KEY]: JSON.stringify({ contrast: 'vivid', themeId: 'obsidian', pieceSetId: 'forge-frost' }) });
+    expect(createSettingsStore({ storage: st }).get()).toMatchObject({ contrast: 'vivid', themeId: 'obsidian', pieceSetId: 'forge-frost' });
+    const bad = createSettingsStore({ storage: memStorage({ [KEY]: JSON.stringify({ contrast: 'neon', themeId: 7, pieceSetId: '' }) }) }).get();
+    expect(bad).toMatchObject({ contrast: DEFAULT_SETTINGS.contrast, themeId: DEFAULT_SETTINGS.themeId, pieceSetId: DEFAULT_SETTINGS.pieceSetId });
+    const s = createSettingsStore({ storage: null });
+    s.set('contrast', 'soft'); s.set('themeId', 'x');
+    expect(s.get()).toMatchObject({ contrast: 'soft', themeId: 'x' });
+  });
+});
+
 describe('graphics settings', () => {
   it('editing any option switches the preset to custom; choosing a preset restores it', () => {
     const st = createSettingsStore({ storage: null });

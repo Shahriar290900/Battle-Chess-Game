@@ -1,7 +1,8 @@
 // SettingsStore persisted to localStorage. Every storage access is wrapped in try/catch
 // (private windows, blocked storage, node tests) and the store works purely in memory when it fails.
 import type { EventBus, GraphicsSettings, QualityTier, Settings, SettingsStore } from '../contracts';
-import { DEFAULT_SETTINGS, GRAPHICS_PRESETS } from '../contracts';
+import { AI_ELO_MAX, AI_ELO_MIN, DEFAULT_SETTINGS, GRAPHICS_PRESETS, LEGACY_LEVEL_ELO } from '../contracts';
+import { legacyLevelForElo } from './ai/strength';
 
 export const SETTINGS_KEY = 'battle-chess.settings.v1';
 
@@ -10,12 +11,22 @@ const ENUMS: Partial<Record<keyof Settings, readonly unknown[]>> = {
   captureMode: ['full', 'quick', 'off'],
   quality: ['auto', 'high', 'medium', 'low'],
   aiLevel: ['easy', 'medium', 'hard', 'master'],
+  contrast: ['soft', 'standard', 'vivid'],
   playerSide: ['w', 'b'],
   highlightStyle: ['glow', 'brackets', 'tint', 'runes'],
 };
 const RANGES: Partial<Record<keyof Settings, [number, number]>> = {
   animSpeed: [0.5, 2], musicVolume: [0, 1], sfxVolume: [0, 1], highlightIntensity: [0.2, 1],
 };
+
+/** Free-form id strings (registries live elsewhere; consumers fall back for unknown ids). */
+const ID_KEYS: ReadonlySet<keyof Settings> = new Set<keyof Settings>(['themeId', 'pieceSetId']);
+export const AI_ELO_STEP = 50;
+/** Computer strength: clamped to AI_ELO_MIN..AI_ELO_MAX and snapped to the 50-point slider grid. */
+export function sanitizeAiElo(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_SETTINGS.aiElo;
+  return Math.min(AI_ELO_MAX, Math.max(AI_ELO_MIN, Math.round(n / AI_ELO_STEP) * AI_ELO_STEP));
+}
 
 const G_ENUMS = {
   preset: ['low', 'medium', 'high', 'custom'], shadows: ['off', 'low', 'high'], particles: ['low', 'medium', 'high'], physics: ['simple', 'full'],
@@ -57,6 +68,8 @@ export function choosePreset(store: SettingsStore, preset: QualityTier | 'auto')
 /** Validate one value against the schema; returns the default when invalid. */
 function sanitize<K extends keyof Settings>(key: K, value: unknown): Settings[K] {
   if (key === 'graphics') return sanitizeGraphics(value) as Settings[K];
+  if (key === 'aiElo') return sanitizeAiElo(value) as Settings[K];
+  if (ID_KEYS.has(key)) return (typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : DEFAULT_SETTINGS[key]) as Settings[K];
   const def = DEFAULT_SETTINGS[key];
   if (typeof def === 'boolean') return (typeof value === 'boolean' ? value : def) as Settings[K];
   if (typeof def === 'number') {
@@ -66,6 +79,13 @@ function sanitize<K extends keyof Settings>(key: K, value: unknown): Settings[K]
   }
   const allowed = ENUMS[key];
   return (allowed && allowed.includes(value) ? value : def) as Settings[K];
+}
+
+/** Settings saved before contract v1.4 only have `aiLevel`: carry it over to `aiElo` once (an explicit `aiElo` wins). */
+export function migrateAiLevel(stored: Record<string, unknown>, into: Settings): void {
+  if ('aiElo' in stored) { into.aiLevel = legacyLevelForElo(into.aiElo); return; }
+  const level = stored.aiLevel as keyof typeof LEGACY_LEVEL_ELO;
+  if (typeof level === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_LEVEL_ELO, level)) into.aiElo = sanitizeAiElo(LEGACY_LEVEL_ELO[level]);
 }
 
 function safeStorage(): Storage | null {
@@ -91,6 +111,7 @@ export function createSettingsStore(opts: SettingsStoreOptions = {}): SettingsSt
       for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
         if (k in parsed) (current as unknown as Record<string, unknown>)[k] = sanitize(k, parsed[k]);
       }
+      migrateAiLevel(parsed, current);
     }
   } catch { /* corrupt or unavailable: keep defaults */ }
 
@@ -106,6 +127,7 @@ export function createSettingsStore(opts: SettingsStoreOptions = {}): SettingsSt
       const next = sanitize(k, value);
       if (k === 'graphics' ? JSON.stringify(current[k]) === JSON.stringify(next) : current[k] === next) return;
       current = { ...current, [k]: next };
+      if (k === 'aiElo') current.aiLevel = legacyLevelForElo(next as number); // keep the deprecated field in step
       snapshot = Object.freeze({ ...current });
       persist();
       subs.forEach((fn) => { try { fn(snapshot, k); } catch (e) { console.error('[settings] subscriber failed', e); } });

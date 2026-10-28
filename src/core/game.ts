@@ -6,7 +6,8 @@
 //
 // The rules engine accepts a move before any animation starts, so visuals can never desync from the
 // position. The controller is decoupled from three.js: all visuals go through a GamePresenter.
-import type { AiLevel, AiMove, AiPlayer, EventBus, GameModeConfig, MoveResult, PromotionRole, Role, SettingsStore, Side, Square } from '../contracts';
+import type { AiMove, AiPlayer, EventBus, GameModeConfig, MoveResult, PromotionRole, Role, SettingsStore, Side, Square } from '../contracts';
+import { toElo } from './ai/strength';
 import type { GamePresenter } from './presenter';
 import { Rules, START_FEN, type GameEnd } from './rules';
 
@@ -17,6 +18,8 @@ export type GameState =
 export interface NewGameConfig extends GameModeConfig {
   /** Optional custom start position (tests, puzzles). */
   fen?: string;
+  /** Computer strength in Elo for vs-ai. Supplying it makes the game a rated game; without it the legacy `aiLevel` sets the strength and the game is unrated (tutorial duels, tests). */
+  aiElo?: number;
 }
 
 export interface GameSnapshot {
@@ -66,6 +69,9 @@ export class GameController {
   private _state: GameState = 'boot';
   private mode: GameModeConfig | null = null;
   private result: GameEnd | null = null;
+  private _aiElo: number | null = null;
+  private _rated = false;
+  private _tookBack = false;
   private epoch = 0;
   private loopDone: Promise<void> = Promise.resolve();
   private pending: ((i: Intent | null) => void) | null = null;
@@ -88,6 +94,12 @@ export class GameController {
 
   get state(): GameState { return this._state; }
   get gameMode(): GameModeConfig | null { return this.mode; }
+  /** Computer strength of the current vs-ai game in Elo (null in hot-seat). */
+  get opponentElo(): number | null { return this._aiElo; }
+  /** Elo of a rated vs-ai game (started with an explicit `aiElo`); null otherwise. */
+  get ratedElo(): number | null { return this._rated ? this._aiElo : null; }
+  /** True once Undo was used in the current game. */
+  get tookBack(): boolean { return this._tookBack; }
 
   // ------------------------------------------------------------------ observation
 
@@ -161,6 +173,9 @@ export class GameController {
     this.cache = null;
     this.result = null;
     this.mode = { kind: config.kind, playerSide: config.playerSide, aiLevel: config.aiLevel };
+    this._aiElo = config.kind === 'vs-ai' ? toElo(config.aiElo ?? config.aiLevel) : null;
+    this._rated = config.kind === 'vs-ai' && typeof config.aiElo === 'number';
+    this._tookBack = false;
     this.firstTurn = true;
     this.presenter.reset(fen);
     if (config.kind === 'vs-ai') {
@@ -223,6 +238,7 @@ export class GameController {
   async undo(): Promise<boolean> {
     if (!this.canUndo() || !this.mode) return false;
     const mode = this.mode;
+    this._tookBack = true;
     await this.interrupt();
     this.rules.undo();
     if (mode.kind === 'vs-ai') {
@@ -308,7 +324,7 @@ export class GameController {
 
   private async aiIntent(epoch: number): Promise<Intent | null> {
     const side = this.rules.turn();
-    const level: AiLevel = this.mode?.aiLevel ?? 'medium';
+    const level = this._aiElo ?? this.mode?.aiLevel ?? 'medium';
     this.setState('aiThinking');
     this.bus.emit('ai:thinking', { side, thinking: true });
     const t0 = Date.now();
