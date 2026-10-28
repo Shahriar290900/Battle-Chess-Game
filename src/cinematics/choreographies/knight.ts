@@ -60,6 +60,7 @@ export const knight: Choreography = (e) => {
 
   stage.at(landing, () => {
     e.ctx.bus.emit('move:step', { faction, role: 'knight' });
+    e.ctx.bus.emit('land', { faction, role: 'knight', strength: 0.7 });
     e.ctx.fx.emit('dustPuff', land.clone(), { count: 10, scale: 0.9 });
     e.ctx.camera.shake(0.2);
     e.stage.impulse(land, 0.35, 2.2); // landing thud
@@ -70,6 +71,7 @@ export const knight: Choreography = (e) => {
     stage.moveTo(attacker, land.clone().addScaledVector(endTan, 0.18), landing + 0.02, 0.1, 'power2.out');
     stage.moveTo(attacker, land, landing + 0.14, 0.18, 'power2.inOut');
     stage.at(landing + 0.06, () => {
+      e.ctx.bus.emit('armour:hit', { faction: e.defFaction, heavy: true }); // the mount's headbutt cracks the plate
       e.ctx.fx.decal(D.clone(), 'crack');
       e.ctx.fx.emit('iceGlitter', D.clone().setY(0.7), { count: 14, scale: 0.7 });
     });

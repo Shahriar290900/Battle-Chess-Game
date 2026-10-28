@@ -5,13 +5,16 @@
   "oga": [
     "80-cc0-creature-sfx", "80-cc0-rpg-sfx", "75-cc0-breaking-falling-hit-sfx", "100-cc0-sfx", "100-cc0-sfx-2",
     "100-cc0-metal-and-wood-sfx", "moving-boulder", "breaking-rock", "cave-in", "stone-rock-or-wood-moved-sound",
-    "20-sword-sound-effects-attacks-and-clashes", "10-impactshield-blocks", "4-metal-dingsrings", "swishes-sound-pack",
-    "3-melee-sounds", "blacksmiths-hammer", "hammer-on-anvil", "horde-war-drums-loop", "their-coming-generic-horn-sound",
-    "explosions-4", "chunky-explosion", "dull-explosion", "muffled-distant-explosion", "explosion-somewhere-far",
-    "fire-staff-sound-effects", "ice-breakingshattering", "freeze-spell-0", "ice-spells", "creepy-incoherent-chanting",
-    "big-scary-troll-sounds", "cc0-deep-monster-roar", "horse-trotting", "walking-on-snow-sound", "metal-clang-sounds",
+    "20-sword-sound-effects-attacks-and-clashes", "10-impactshield-blocks", "4-metal-dingsrings",
+    "swishes-sound-pack", "3-melee-sounds", "blacksmiths-hammer", "hammer-on-anvil", "horde-war-drums-loop",
+    "their-coming-generic-horn-sound", "explosions-4", "chunky-explosion", "dull-explosion",
+    "muffled-distant-explosion", "explosion-somewhere-far", "fire-staff-sound-effects", "ice-breakingshattering",
+    "freeze-spell-0", "ice-spells", "creepy-incoherent-chanting", "big-scary-troll-sounds",
+    "cc0-deep-monster-roar", "horse-trotting", "walking-on-snow-sound", "metal-clang-sounds",
     "crowd-shoutingspeaking-ambience", "cheers-0", "voiceover-pack-fighter-40-taunts", "wind1", "low-rumbling",
-    "thwack-sounds", "wind-hit-time-morph", "zombies-sound-pack", "goblins-sound-pack", "chain-winch-sounds", "crash-collision",
-    "different-steps-on-wood-stone-leaves-gravel-and-mud"
+    "thwack-sounds", "wind-hit-time-morph", "zombies-sound-pack", "goblins-sound-pack", "chain-winch-sounds",
+    "crash-collision", "different-steps-on-wood-stone-leaves-gravel-and-mud", "scrapes", "stone-door",
+    "tree-creaking", "stonerockorwoodmovednotick", "35-wooden-crackshitsdestructions",
+    "glass-break", "mechanical-sounds"
   ]
 }

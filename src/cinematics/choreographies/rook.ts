@@ -44,6 +44,8 @@ export const rook: Choreography = (e) => {
         const d = D.clone().sub(from).normalize();
         stage.emit('iceGlitter', from, { direction: d, count: 10, speed: 8, spread: 0.12, scale: 0.7 });
       });
+      // each crown shard bites the target's armour ~0.2 s later
+      stage.at(a.attackAt + rise * 0.55 + k * 0.07 + 0.2, () => stage.bus('armour:hit', { faction: e.defFaction, heavy: false }));
     }
     burstAt(e, a.attackAt + rise + hang * 0.6, 'iceGlitter', D, { count: 12, scale: 0.6 }, 0.2);
     stage.tilt(attacker, 0.5, slamAt, slam, 'power3.in');
@@ -52,6 +54,7 @@ export const rook: Choreography = (e) => {
 
   // landing: shockwave ring, crack decal, faction burst
   stage.at(a.impactAt, () => {
+    e.ctx.bus.emit('land', { faction, role: 'rook', strength: 0.9 }); // the tower lands
     e.ctx.fx.shockwave(D.clone(), faction, 2.6);
     e.ctx.fx.decal(D.clone(), 'crack');
   });

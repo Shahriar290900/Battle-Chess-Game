@@ -41,6 +41,8 @@ export const bishop: Choreography = (e) => {
   // hit: glowing cracks (ember) / freeze (frost); HitReact held; shatter follows
   const sweepDur = ember ? 0.5 : 0.4;
   stage.at(a.impactAt, () => stage.safe(() => e.ctx.fx.sweep(defender, ember ? 'ember' : 'frost', sweepDur)));
+  // seams crack open / the frost bites into the armour while the sweep runs
+  stage.at(a.impactAt + sweepDur * 0.5, () => stage.bus('armour:hit', { faction: e.defFaction, heavy: false }));
 
   const shatterDelay = sweepDur + 0.05;
   const r = e.resolve(a.impactAt + 0.12 + shatterDelay + 0.1, e.S, { after: a.end });

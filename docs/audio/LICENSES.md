@@ -62,3 +62,10 @@ re-run `npm run audio:build` to reproduce.
 | Chain winch sounds | bart | CC0 1.0 | https://opengameart.org/content/chain-winch-sounds |
 | Crash Collision | qubodup | CC0 1.0 | https://opengameart.org/content/crash-collision |
 | Different steps on wood, stone, leaves, gravel and mud | TinyWorlds | CC0 1.0 | https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud |
+| Scrapes | AntumDeluge | CC0 1.0 | https://opengameart.org/content/scrapes |
+| Stone Door | bonebrah | CC0 1.0 | https://opengameart.org/content/stone-door |
+| Tree Creaking | AntumDeluge | CC0 1.0 | https://opengameart.org/content/tree-creaking |
+| stone_rock_or_wood_moved_no_tick | omegagreg | CC0 1.0 | https://opengameart.org/content/stonerockorwoodmovednotick |
+| 35 wooden cracks/hits/destructions | Independent.nu | CC0 1.0 | https://opengameart.org/content/35-wooden-crackshitsdestructions |
+| Glass Break | Till Behrend | CC0 1.0 | https://opengameart.org/content/glass-break |
+| Mechanical Sounds | BMacZero | CC0 1.0 | https://opengameart.org/content/mechanical-sounds |

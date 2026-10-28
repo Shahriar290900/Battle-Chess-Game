@@ -21,6 +21,10 @@ ALIAS = {
     'zombie': 'o_zombies-sound-pack', 'goblin': 'o_goblins-sound-pack', 'winch': 'o_chain-winch-sounds',
     'crash': 'o_crash-collision', 'boulder': 'o_moving-boulder', 'rock': 'o_breaking-rock', 'cave': 'o_cave-in',
     'stonemove': 'o_stone-rock-or-wood-moved-sound', 'steps': 'o_different-steps-on-wood-stone-leaves-gravel-and-mud',
+    # contract v1.4 cue packs (CC0)
+    'scrape': 'o_scrapes', 'sdoor': 'o_stone-door', 'idoor': 'o_iron-door', 'screak': 'o_tree-creaking',
+    'stnomv': 'o_stonerockorwoodmovednotick', 'woodc': 'o_35-wooden-crackshitsdestructions', 'brk': 'o_5-break-crunch-impacts',
+    'glassb': 'o_glass-break', 'mech': 'o_mechanical-sounds',
 }
 
 
@@ -255,3 +259,71 @@ def finish(key, v, x, lufs=-14.0, comp=(-16, 3.0), out='work/out', tail=0.08, ce
     path = f'{dsp.HERE}/{out}/{key.replace(":", "_")}__{v}.wav'
     dsp.write(path, y)
     return path, y
+
+
+# ---------------------------------------------------------------------------- loops / textures (contract v1.4)
+def granular(srcs, dur, grain=0.14, rate=24.0, r=None, shape=None):
+    """Continuous texture: overlap-add Hann-windowed random grains cut from the source clip(s)."""
+    r = r or dsp.rng
+    srcs = srcs if isinstance(srcs, (list, tuple)) else [srcs]
+    g = int(grain * SR)
+    w = np.hanning(g)
+    n = int(dur * SR)
+    out = np.zeros(n + 2 * g)
+    k = int(dur * rate)
+    for i in range(k):
+        x = srcs[int(r.integers(len(srcs)))]
+        if len(x) <= g + 2:
+            x = np.pad(x, (0, g + 3 - len(x)))
+        st = int(r.integers(0, len(x) - g - 1))
+        pos = int((i + r.uniform(-0.35, 0.35)) / rate * SR)
+        pos = max(0, pos)
+        c = x[st:st + g] * w
+        out[pos:pos + g] += c * float(r.uniform(0.7, 1.0))
+    out = out[:n]
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def stick_slip(dur, rate=9.0, jitter=0.5, floor=0.3, r=None):
+    """Irregular stick-slip envelope (dragged stone / ice): fast attack, slower release, jittered spacing."""
+    r = r or dsp.rng
+    n = int(dur * SR)
+    e = np.zeros(n)
+    tt = 0.0
+    while tt < dur:
+        i = int(tt * SR)
+        L = int(min(n - i, SR * (0.7 / rate) * float(r.uniform(0.8, 1.6))))
+        if L > 8:
+            a = int(0.006 * SR)
+            pulse = np.exp(-np.arange(L) / (L * 0.45)) * np.minimum(1, np.arange(L) / max(1, a)) * float(r.uniform(0.6, 1.0))
+            e[i:i + L] = np.maximum(e[i:i + L], pulse)
+        tt += (1.0 / rate) * float(r.uniform(1 - jitter, 1 + jitter))
+    return floor + (1 - floor) * e
+
+
+def make_loop(x, length, xfade):
+    """Make `x` (>= length + xfade seconds) seamlessly loop at `length`: the overshoot is cross-faded (equal power) into the start."""
+    L, X = int(length * SR), int(xfade * SR)
+    assert len(x) >= L + X - 4, (len(x), L + X)
+    x = np.pad(x, (0, max(0, L + X - len(x))), mode='edge')
+    y = x[:L].copy()
+    u = np.linspace(0, 1, X)
+    y[:X] = y[:X] * np.sin(u * np.pi / 2) + x[L:L + X] * np.cos(u * np.pi / 2)
+    return y
+
+
+def finish_loop(key, v, body, lufs=-20.0, guard=0.1, out='work/out'):
+    """Loudness-match a seamless loop body (processed on 3 tiled copies so edges stay continuous) and write it with a
+    `guard` of repeated audio either side (MP3 encoder padding then never lands inside the loop region).
+    Returns (path, y, region)."""
+    g = int(guard * SR)
+    n = len(body)
+    y = np.tile(dsp.hp(np.tile(body, 3), 28, 2), 1)
+    y = dsp.compress(y, -22, 2.5, 0.01, 0.15)
+    gain_db = lufs - dsp.momentary_lufs_max(y[n:2 * n])
+    y = dsp.limit(y * dsp.db(gain_db), -1.0)
+    mid = y[n:2 * n]
+    full = np.concatenate([mid[-g:], mid, mid[:g]])
+    path = f'{dsp.HERE}/{out}/{key.replace(":", "_")}__{v}.wav'
+    dsp.write(path, full)
+    return path, full, dict(start=round(guard, 4), end=round(guard + n / SR, 4))

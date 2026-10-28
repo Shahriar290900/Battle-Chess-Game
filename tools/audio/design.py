@@ -5,7 +5,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsp
 from dsp import SR, db, t, mix
-from lib import S, pickv, seed, scatter, crowd, horn, war_drum, gong, choir, gallop, creature_call, shimmer, boom, finish, hoof_clops
+from lib import S, pickv, seed, scatter, crowd, horn, war_drum, gong, choir, gallop, creature_call, shimmer, boom, finish, hoof_clops, onsets, granular, stick_slip, make_loop, finish_loop
 
 REG = {}          # key -> dict(nvar, pri, gain, preload, lufs, fn)
 ALIASES = {}      # key -> target key
@@ -14,9 +14,9 @@ EMB = dict(rt=1.4, damp=4200, wet=0.3)
 RIME = dict(rt=2.3, damp=9000, wet=0.36)
 
 
-def reg(key, nvar=1, pri=2, gain=1.0, preload=False, lufs=-14.0, comp=(-16, 3.0), cooldown=None, maxlen=None):
+def reg(key, nvar=1, pri=2, gain=1.0, preload=False, lufs=-14.0, comp=(-16, 3.0), cooldown=None, maxlen=None, loop=False):
     def deco(fn):
-        REG[key] = dict(nvar=nvar, pri=pri, gain=gain, preload=preload, lufs=lufs, comp=comp, cooldown=cooldown, maxlen=maxlen, fn=fn)
+        REG[key] = dict(nvar=nvar, pri=pri, gain=gain, preload=preload, lufs=lufs, comp=comp, cooldown=cooldown, maxlen=maxlen, loop=loop, fn=fn)
         return fn
     return deco
 
@@ -560,6 +560,226 @@ for k, (nv, fn) in UI.items():
         reg(k, nv, 1, 0.5, True, lufs=-24, comp=(-14, 2.0), maxlen=0.45)(lambda v, fn=fn: ui_proc(fn(v)))
 
 
+# ====================================================================== CONTRACT v1.4 CUES
+# Slides (loop + start lurch + stop settle), shield flash / break, armour hits, landings, draw sting.
+SLIDE_L, SLIDE_X = 2.4, 0.4          # loop length / cross-fade (s)
+
+
+def _lfo(n, cycles, depth, phase=0.0):
+    """Loop-safe slow amplitude wobble: `cycles` whole periods across n samples."""
+    return 1 + depth * np.sin(2 * np.pi * cycles * np.arange(n) / n + phase)
+
+
+def slide_body(f, v):
+    D = SLIDE_L + SLIDE_X
+    n = int(D * SR)
+    r = dsp.rng
+    if f == 'emberhold':
+        # dragged concrete slab: stone-door grind + boulder drag, stick-slip rumble, gritty top, sub bed
+        door = S('sdoor', 'stone_door', p=0.85 - 0.04 * v, f_lp=3200, tr=False)
+        drag = S('boulder', 'move_boulder_0', p=0.78, tr=False)
+        scr = S('scrape', 'scrape-1', p=0.7, f_lp=2600, tr=False)
+        a = granular([door], D, 0.17, 26)
+        b = granular([drag], D, 0.24, 13)
+        c = granular([scr], D, 0.14, 20)
+        env = stick_slip(D, 8.0 + v, 0.55, 0.35)
+        brown = dsp.hp(dsp.lp(dsp.noise(D, 'brown'), 420), 70)
+        grit = dsp.bp(dsp.noise(D), 500, 3200) * (env ** 1.4)
+        bed = dsp.lp(np.resize(S('rumble', 'low-rumbling-176033', 2.0 + 5 * v, 5.0, tr=False, f_lp=150), n), 150)
+        a, b, c = dsp.hp(a, 140, 2), dsp.hp(b, 120, 2), dsp.hp(c, 220, 2)
+        y = (a * 1.0 + b * 0.55) * (0.5 + 0.5 * env) + c * 0.6 * env + brown * 0.08 * env + grit * 0.4 + bed * 0.04
+        y = y * _lfo(n, 2 + v, 0.14)
+        y = dsp.saturate(y / np.max(np.abs(y)), 1.5)
+        y = dsp.lp(y, 5200)
+    else:
+        # ice on stone: scraping rasp, tree-creak groan pitched down, crystalline crackle
+        s1 = S('scrape', 'scrape-1', p=0.82, f_hp=450, tr=False)
+        s2 = S('scrape', 'scrape-2', p=0.9 + 0.05 * v, f_hp=450, tr=False)
+        cr = S('screak', 'tree_creak', 0.5 + 2 * v, 3.0, p=0.5, f_lp=2600, tr=False)
+        rasp = granular([s1, s2], D, 0.13, 22)
+        groan = granular([cr], D, 0.4, 8)
+        env = stick_slip(D, 10.5 + v, 0.5, 0.3)
+        band = dsp.bp(dsp.noise(D), 700, 2600) * env
+        low = dsp.lp(dsp.noise(D, 'brown'), 220)
+        # crystalline crackle: Poisson ticks of glass / ice slivers, high-passed and pitched up
+        tick = [S('ki', f'impactGlass_light_{k:03d}', 0, 0.09, p=1.5 + 0.2 * k, f_hp=4200) for k in range(5)] + \
+               [S('ice', 'LedasLuzta2', 0.0, 0.07, p=1.3, f_hp=5000), S('ice', 'LedasLuzta', 0.1, 0.06, p=1.6, f_hp=5000)]
+        layers = []
+        tt = 0.0
+        while tt < D - 0.1:
+            layers.append((tick[int(r.integers(len(tick)))], tt, -float(r.uniform(5, 17))))
+            tt += float(r.exponential(1 / 11.0))
+        crackle = dsp.mix(layers, D)
+        y = rasp * (0.5 + 0.5 * env) * 0.8 + groan * 0.85 + band * 0.32 + low * 0.35 + crackle * 0.55
+        y = y * _lfo(n, 3 + v, 0.12, 1.0)
+        y = dsp.lp(y / np.max(np.abs(y)), 9000)
+    return make_loop(y, SLIDE_L, SLIDE_X)
+
+
+def slide_start(f, v):
+    if f == 'emberhold':
+        a = S('stnomv', 'stone_rock_or_wood_moved_no_tick', p=0.8, g=0)
+        b = S('mech', 'clank1', p=0.6, f_lp=2200, g=-8, tr=False)
+        g = granular([S('sdoor', 'stone_door', p=0.8, f_lp=3000, tr=False)], 0.5, 0.15, 24)
+        g = g * np.minimum(1, t(len(g)) / 0.12)
+        y = lay((a, 0.0, 0), (thump(70, 38, .45, .16, -3), 0, 0), (b, 0.0, 0), (g, 0.05, -4), (crack_t(-14, v, False), 0, 0))
+        return R(y, dict(rt=0.9, wet=0.2, damp=4200))
+    a = S('scrape', pickv(['scrape-2', 'scrape-1'], v), 0, 0.5, p=0.85, f_hp=400, g=-1)
+    b = S('ice', 'LedasLuzta2', g=-8, f_hp=3000)
+    c = S('screak', 'tree_creak', 1.0 + v, 0.5, p=0.6, f_lp=3000, g=-4, tr=False)
+    y = lay((a, 0, 0), (b, 0.05, 0), (c, 0.0, 0), (thump(100, 52, .35, .12, -5), 0, 0))
+    return R(y, dict(rt=1.2, wet=0.24, damp=9000))
+
+
+def slide_stop(f, v):
+    if f == 'emberhold':
+        a = S('boulder', 'boulder_drop_0', p=0.82, g=-1)
+        b = S('ki', f'impactPlate_heavy_{ri(5):03d}', f_lp=2500, g=-3)
+        dust = dsp.lp(dsp.noise(0.7), 1500) * dsp.env_exp(int(0.7 * SR), 0.18) * 0.35
+        rock = S('bfh', f'bfh1_rock_falling_0{1 + ri(9)}', f_lp=3000, g=-10)
+        y = lay((thump(62, 30, .85, .3, 0), 0, 0), (a, 0, 0), (b, 0.0, 0), (dust, 0.03, -6), (rock, 0.12, 0))
+        return R(y, dict(rt=1.1, wet=0.25, damp=4200))
+    a = S('ki', f'impactGlass_heavy_{ri(5):03d}', f_lp=4500, g=-3, p=0.85)
+    b = S('ice', pickv(['LedasLuzta5', 'LedasLuzta4'], v), 0, 0.6, g=-10, f_hp=800)
+    c = S('ki', f'footstep_snow_{ri(5):03d}', g=-8)
+    y = lay((thump(85, 40, .7, .25, -1), 0, 0), (a, 0, 0), (b, 0.04, 0), (c, 0.0, 0), (shimmer(.8, 2800, -14, 8), 0.1, 0))
+    return R(y, dict(rt=1.5, wet=0.28, damp=9000))
+
+
+for f in ('emberhold', 'rime'):
+    reg(f'slide:{f}', 2, 2, 0.8, True, lufs=-20, loop=True)(lambda v, f=f: slide_body(f, v))
+    reg(f'slide:{f}:start', 2, 2, 0.85, True, lufs=-17, maxlen=0.9)(lambda v, f=f: slide_start(f, v))
+    reg(f'slide:{f}:stop', 2, 2, 0.9, True, lufs=-16, maxlen=1.2)(lambda v, f=f: slide_stop(f, v))
+
+
+def wood_crack(i, dur=0.5, p=1.0, g=0.0):
+    """One crack cut from the 35-wooden-cracks compilation (onsets found once)."""
+    w = dsp.load('o_35-wooden-crackshitsdestructions', 'wood')[: int(40 * SR)]
+    on = onsets(w, 0.45, 0.28)
+    o = on[i % len(on)]
+    c = dsp.pitch(dsp.seg(w, max(0, o - 0.01), dur), p)
+    return dsp.fade(c / dsp.peak(c), 0.001, 0.08) * db(g)
+
+
+def shield_flash(f, v):
+    if f == 'emberhold':
+        base = [740, 880, 988][v % 3]
+        bell1 = ring(base, 1.5, 0, 1.0)
+        bell2 = ring(base * 1.5, 1.0, -9)
+        ding = S('ding', pickv(['ding_1', 'ding_2', 'ding_3'], v), g=-5, p=base / 1100.0)
+        parry = S('shield', f'impact_{pickv([2, 7, 8], v)}', 0, 0.3, f_hp=900, g=-3)
+        kb = S('ki', f'impactBell_heavy_{v:03d}', g=-6)
+        light = dsp.whoosh(0.3, 1400, 9000, 1.6, 0.3) * db(-6)
+        y = lay((parry, 0, 0), (crack_t(-3, v), 0, 0), (bell1, 0.004, -3), (bell2, 0.012, 0), (ding, 0, 0), (kb, 0, 0), (light, 0.0, 0))
+        return dsp.reverb(y, 0.9, .22, .01, 5200)
+    base = [2100, 2600, 3100][v % 3]
+    gl = dsp.tone_bank([base, base * 2.41, base * 3.8, base * 5.6], [1, .6, .45, .3], [.9, .6, .4, .25], 1.6)
+    gl = gl / dsp.peak(gl)
+    ig = S('ki', f'impactGlass_light_{v:03d}', g=-2, f_hp=1500)
+    ice = S('ice', 'LedasLuzta2', g=-9, f_hp=3000)
+    light = dsp.whoosh(0.32, 3200, 12500, 1.8, 0.3) * db(-6)
+    y = lay((ig, 0, 0), (gl, 0.003, -5), (ice, 0.01, 0), (shimmer(1.0, 2300, -9, 10), 0.03, 0), (light, 0, 0), (thump(160, 90, .2, .06, -16), 0, 0))
+    return dsp.reverb(y, 1.4, .28, .012, 10000)
+
+
+def shield_break(f, v):
+    if f == 'emberhold':
+        splints = [(wood_crack(3 + 5 * v + k, 0.45, 1.0 - 0.05 * k, -k * 2), 0.04 * k, 0) for k in range(3)]
+        plank = S('ki', f'impactPlank_medium_{v:03d}', g=-2)
+        tear = S('ki', f'impactMetal_heavy_{ri(5):03d}', g=-3, p=0.9)
+        rivet_src = [S('mech', 'lightclunk1', f_hp=1500, dur=0.12), S('ki', f'impactMetal_light_{ri(5):03d}', 0, 0.1, f_hp=2500),
+                     S('ki', f'impactMetal_light_{ri(5):03d}', 0, 0.1, f_hp=3200), S('kr', 'handleCoins', 0, 0.14, f_hp=2200)]
+        rivets = scatter(rivet_src, 18, 0.12, 1.1, -2, -20, 1.0, 1.9, 1.6, 0.12)
+        y = lay(*splints, (plank, 0, 0), (tear, 0.02, 0), (rivets, 0.08, 0), (thump(78, 34, .8, .28, -2), 0, 0),
+                (S('bfh', f'bfh1_rock_falling_0{1 + ri(9)}', f_lp=3500, g=-12), 0.05, 0))
+        return dsp.reverb(y, 1.2, .26, .01, 4800)
+    # Rime guard: a slab of ice cracks (rising crack rate), then bursts and tinkles away
+    ticks = []
+    tt = 0.0
+    k = 0
+    while tt < 0.6:
+        amp = -14 + 12 * (tt / 0.6)
+        c = dsp.hp(dsp.noise(0.012), 3200) * dsp.env_exp(int(0.012 * SR), 0.003)
+        ticks.append((c / dsp.peak(c), tt, amp))
+        tt += 0.07 * (0.97 ** k) * float(dsp.rng.uniform(0.6, 1.3))
+        k += 1
+    pre = dsp.mix(ticks, 0.62)
+    slab = S('ice', pickv(['LedasLuzta33', 'LedasLuzta4'], v), g=-1)
+    glass = S('glassb', 'glass_breaking', g=-4, p=0.9)
+    big = S('ki', f'impactGlass_heavy_{ri(5):03d}', g=-3)
+    bits = scatter([S('ki', f'impactGlass_light_{k2:03d}', 0, 0.1, f_hp=2500) for k2 in range(5)], 16, 0.05, 1.2, -4, -20, 1.0, 1.8, 1.6, 0.12)
+    y = lay((pre, 0, -2), (slab, 0.58, 0), (glass, 0.6, 0), (big, 0.6, 0), (thump(90, 38, .9, .3, -2), 0.6, 0), (bits, 0.66, 0), (shimmer(1.2, 2500, -10, 16), 0.8, 0))
+    return dsp.reverb(y, 1.9, .3, .012, 9500)
+
+
+for f in ('emberhold', 'rime'):
+    reg(f'shield:flash:{f}', 3, 2, 0.85, False, lufs=-15, maxlen=1.7, cooldown=0.08)(lambda v, f=f: shield_flash(f, v))
+    reg(f'shield:break:{f}', 2, 3, 0.9, False, lufs=-14, maxlen=2.6)(lambda v, f=f: shield_break(f, v))
+
+
+def armour_hit(f, heavy, v):
+    k = ri(5)
+    if f == 'emberhold':
+        a = S('ki', f'impactPlate_{"heavy" if heavy else "medium"}_{k:03d}', g=0)
+        b = S('shield', f'impact_{pickv([1, 3, 5, 6, 9], v)}', 0, 0.35, f_lp=4500, g=-4)
+        c = S('rpg', f'chain_0{1 + ri(3)}', f_hp=2000, g=-12, dur=0.25)
+        th = thump(72, 32, .8, .26, -2) if heavy else thump(95, 44, .5, .16, -2)
+        y = lay((a, 0, 0), (b, 0.003, 0), (c, 0.02, 0), (th, 0, 0))
+        return dsp.reverb(y, 1.2 if heavy else 0.9, .2, .01, 4500)
+    a = S('ki', f'impactMetal_{"heavy" if heavy else "medium"}_{k:03d}', g=-1, f_lp=6500)
+    b = S('ki', f'impactGlass_{"medium" if heavy else "light"}_{ri(5):03d}', 0, 0.2, f_hp=2500, g=-5)
+    c = S('ki', f'footstep_snow_{ri(5):03d}', g=-7, f_hp=700)
+    th = thump(80, 50, .6, .2, -4) if heavy else thump(105, 50, .4, .12, -4)
+    y = lay((a, 0, 0), (b, 0.004, 0), (c, 0.0, 0), (th, 0, 0))
+    return dsp.reverb(y, 1.3, .22, .01, 9000)
+
+
+for f in ('emberhold', 'rime'):
+    reg(f'armour:hit:{f}', 3, 2, 0.75, False, lufs=-16, maxlen=0.9, cooldown=0.06)(lambda v, f=f: armour_hit(f, False, v))
+    reg(f'armour:hit:{f}:heavy', 3, 2, 0.9, False, lufs=-14, maxlen=1.4, cooldown=0.1)(lambda v, f=f: armour_hit(f, True, v))
+
+
+def land_fx(f, tier, v):
+    k = ri(5)
+    th = {1: (88, 42, .35, .12), 2: (74, 34, .7, .24), 3: (60, 26, 1.1, .38)}[tier]
+    if f == 'emberhold':
+        if tier == 1:
+            parts = [(S('ki', f'footstep_concrete_{k:03d}', g=0), 0, 0), (S('ki', f'impactPlate_light_{ri(5):03d}', f_lp=3000, g=-6), 0, 0)]
+        elif tier == 2:
+            parts = [(S('ki', f'impactPlate_heavy_{k:03d}', f_lp=3500, g=-1), 0, 0), (S('boulder', 'boulder_drop_0', p=1.1, g=-6), 0, 0),
+                     (S('bfh', f'bfh1_rock_falling_0{1 + ri(9)}', f_lp=3500, g=-12), 0.05, 0)]
+        else:
+            parts = [(S('ki', f'impactPlate_heavy_{k:03d}', g=-1), 0, 0), (S('boulder', 'boulder_drop_0', p=0.8, g=-2), 0, 0),
+                     (S('bfh', f'bfh1_rock_falling_0{1 + ri(9)}', f_lp=4000, g=-6), 0.06, 0), (S('stonemove', 'stone_rock_or_wood_moved', p=0.7, g=-8), 0.1, 0)]
+        dust = dsp.lp(dsp.noise(0.6), 1400) * dsp.env_exp(int(0.6 * SR), 0.12) * 0.3
+        y = lay(*parts, (thump(*th, -1), 0, 0), (dust, 0.02, -6 + 2 * tier))
+        return dsp.reverb(y, 0.8 + 0.3 * tier, .24, .01, 4200)
+    if tier == 1:
+        parts = [(S('ki', f'footstep_snow_{k:03d}', g=0), 0, 0), (S('ki', f'impactGlass_light_{ri(5):03d}', 0, 0.12, f_hp=3000, g=-8), 0.005, 0)]
+    elif tier == 2:
+        parts = [(S('ki', f'impactGlass_heavy_{k:03d}', f_lp=5000, g=-2), 0, 0), (S('ice', 'LedasLuzta5', 0, 0.5, f_hp=700, g=-10), 0.03, 0)]
+    else:
+        parts = [(S('ki', f'impactGlass_heavy_{k:03d}', g=-1), 0, 0), (S('ice', 'LedasLuzta33', g=-6), 0.02, 0), (S('glassb', 'glass_breaking', g=-10, f_lp=6000), 0.05, 0),
+                 (shimmer(.9, 2600, -14, 8), 0.1, 0)]
+    y = lay(*parts, (thump(th[0] + 16, th[1] + 8, th[2], th[3], -4 + (tier == 3) * 3), 0, 0))
+    return dsp.reverb(y, 1.0 + 0.3 * tier, .26, .01, 9000)
+
+
+for f in ('emberhold', 'rime'):
+    for tier, (lufs, ml, g) in {1: (-18, 0.6, 0.6), 2: (-16, 0.95, 0.8), 3: (-14, 1.5, 0.95)}.items():
+        reg(f'land:{f}:s{tier}', 2, 2, g, False, lufs=lufs, maxlen=ml, cooldown=0.05)(lambda v, f=f, tier=tier: land_fx(f, tier, v))
+    alias(f'land:{f}', f'land:{f}:s2')
+
+
+@reg('sting:draw', 1, 2, 0.8, False, lufs=-17, maxlen=3.8)
+def draw_sting(v):
+    h = dsp.lp(horn(2.2, 82, 0, 0.5), 1900)
+    w = S('wind', 'wind2', 4.0, 3.0, g=-4, f_hp=250, f_lp=3500, tr=False)
+    w = w * np.sin(np.pi * np.clip(t(len(w)) / (len(w) / SR), 0, 1)) ** 2
+    y = lay((h, 0, 0), (w, 0.0, -6), (war_drum(-3, 0.62, 1.0), 0.1, 0), (thump(55, 28, 1.4, .5, -3), 0.1, 0))
+    return dsp.reverb(y, 2.8, .4, .03, 5000)
+
+
 def default_maxlen(key):
     rules = [('move:step', .4), ('step:knight', .4), ('step:heavy', .75), ('attack:whoosh', 1.1), ('hit:', 3.0), ('impact:', 1.5),
              ('shatter:', None), ('debris:', None), ('summon', 2.4), ('spell', 2.4), ('check', 2.4), ('mate', 5.2), ('castle', 2.2),
@@ -587,9 +807,13 @@ def build(prefixes):
         for v in range(r['nvar']):
             seed(key, v)
             x = r['fn'](v)
-            path, y = finish(key, v, x, r['lufs'], r['comp'], maxlen=r['maxlen'] or default_maxlen(key))
+            if r['loop']:
+                path, y, region = finish_loop(key, v, x, r['lufs'])
+            else:
+                path, y = finish(key, v, x, r['lufs'], r['comp'], maxlen=r['maxlen'] or default_maxlen(key))
+                region = None
             files.append(os.path.basename(path)[:-4])
-        meta[key] = dict(files=files, gain=r['gain'], priority=r['pri'], preload=r['preload'], cooldown=r['cooldown'])
+        meta[key] = dict(files=files, gain=r['gain'], priority=r['pri'], preload=r['preload'], cooldown=r['cooldown'], loop=region)
         print(f'{key:28s} {len(files)} vars  {len(y)/SR:5.2f}s', flush=True)
     return meta
 
@@ -597,6 +821,7 @@ def build(prefixes):
 if __name__ == '__main__':
     meta = build(sys.argv[1:])
     mp = os.path.join(dsp.HERE, 'work', 'registry.json')
-    old = json.load(open(mp)) if os.path.exists(mp) and sys.argv[1:] else {}
+    prev = json.load(open(mp)) if os.path.exists(mp) and sys.argv[1:] else {}
+    old = dict(prev.get('entries', {}))
     old.update(meta)
-    json.dump(dict(entries=old, aliases=ALIASES), open(mp, 'w'), indent=1)
+    json.dump(dict(entries=old, aliases={**prev.get('aliases', {}), **ALIASES}), open(mp, 'w'), indent=1)

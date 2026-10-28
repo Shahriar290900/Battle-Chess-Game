@@ -14,7 +14,7 @@ export const pawn: Choreography = (e) => {
   if (e.isEnPassant) {
     // sidestep along the rank, away from the victim, to make room for the horizontal slash
     const P = e.A.clone().addScaledVector(dir, -0.35);
-    t = stage.moveTo(attacker, P, t, e.quick ? 0.1 : 0.25, 'power2.out');
+    t = stage.glide(attacker, P, t, e.quick ? 0.1 : 0.25, 'power2.out');
     from = P;
   }
 
@@ -45,6 +45,8 @@ export const pawn: Choreography = (e) => {
     // shield-bash staggers the target just before the chop lands
     stage.moveTo(defender, new Vector3(D.x + dir.x * 0.14, 0, D.z + dir.z * 0.14), a.attackAt + imp * 0.3, 0.12, 'power2.out');
     burstAt(e, a.attackAt + imp * 0.3, 'sparks', D.clone().addScaledVector(dir, -0.3), { count: 6, scale: 0.4 }, 0.7);
+    // the shield rim rings on the target, then bites its armour
+    stage.at(a.attackAt + imp * 0.3, () => { stage.bus('shield:flash', { faction: e.faction }); stage.bus('armour:hit', { faction: e.defFaction, heavy: false }); });
     burstAtSocket(e, a.impactAt, 'sparks', 'socket_impact', { count: 16, scale: 0.6 });
   } else {
     burstAtSocket(e, a.impactAt, 'iceGlitter', 'socket_impact', { count: 16, scale: 0.6 });

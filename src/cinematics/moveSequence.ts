@@ -39,7 +39,11 @@ export function buildTravel(stage: Stage, actor: PieceActor, A: Vector3, B: Vect
       const dur = 0.75;
       end = stage.arc(actor, lPath(A, C, B, 1.2), t, dur, 'power1.inOut', { faceTangent: 0.4, pitch: (p) => lerp(-0.3, 0.25, smoothstep(p)) });
       stage.tilt(actor, 0, end, 0.15, 'power2.out');
-      stage.at(end, () => { ctx.bus.emit('move:step', { faction, role: 'knight' }); ctx.fx.emit('dustPuff', B.clone().setY(0.05), { count: 8, scale: 0.8 }); });
+      stage.at(end, () => {
+        ctx.bus.emit('move:step', { faction, role: 'knight' });
+        ctx.bus.emit('land', { faction, role: 'knight', strength: 0.55 });
+        ctx.fx.emit('dustPuff', B.clone().setY(0.05), { count: 8, scale: 0.8 });
+      });
       break;
     }
     case 'king':

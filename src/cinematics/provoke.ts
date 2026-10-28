@@ -5,7 +5,7 @@ import { Vector3 } from 'three';
 import type { Faction, PieceActor, Role, Square } from '../contracts';
 import { restYaw, yawToward } from '../contracts';
 import { CameraDriver } from './cameraDriver';
-import { clamp, flatDir, socketObject, socketPos, wrapPi } from './common';
+import { clamp, flatDir, hasShield, socketObject, socketPos, wrapPi } from './common';
 import { FightFrame } from './fightFrame';
 import { pickShot } from './shotPicker';
 import type { Stage } from './stage';
@@ -28,12 +28,12 @@ function proceduralTaunt(stage: Stage, a: PieceActor, king: PieceActor, P0: numb
         const t = 0.1 + k * 0.27;
         stage.tilt(a, 0.18, P0 + t, 0.08, 'power3.out');
         stage.tilt(a, 0, P0 + t + 0.08, 0.14, 'power2.out');
-        at(t + 0.06, () => { stage.emit(spark, weaponPos(), { count: 10, scale: 0.6 }); ctx.camera.shake(0.1); });
+        at(t + 0.06, () => { stage.emit(spark, weaponPos(), { count: 10, scale: 0.6 }); ctx.camera.shake(0.1); stage.bus('shield:flash', { faction: a.faction }); });
       }
       return P0 + 0.95;
     case 'rook': { // brazier flare and lurch
       const lurch = home.clone().addScaledVector(toKing, 0.35);
-      stage.moveTo(a, lurch, P0 + 0.1, 0.2, 'power3.out');
+      stage.glide(a, lurch, P0 + 0.1, 0.2, 'power3.out');
       stage.tilt(a, 0.28, P0 + 0.1, 0.2, 'power3.out');
       at(0.25, () => {
         const top = socketPos(a, 'socket_head', new Vector3());
@@ -41,8 +41,9 @@ function proceduralTaunt(stage: Stage, a: PieceActor, king: PieceActor, P0: numb
         else { stage.emit('frostMist', top, { count: 16, scale: 1.2 }); stage.emit('iceGlitter', top, { count: 30, direction: new Vector3(0, 1, 0), speed: 4 }); }
         ctx.camera.shake(0.25);
       });
-      stage.moveTo(a, home, P0 + 0.65, 0.35, 'power2.inOut');
+      stage.glide(a, home, P0 + 0.65, 0.35, 'power2.inOut');
       stage.tilt(a, 0, P0 + 0.65, 0.35, 'power2.out');
+      at(1.0, () => stage.bus('land', { faction: a.faction, role: 'rook', strength: 0.4 })); // settles back onto its square
       return P0 + 1.05;
     }
     case 'knight': // rear and snort
@@ -54,6 +55,7 @@ function proceduralTaunt(stage: Stage, a: PieceActor, king: PieceActor, P0: numb
         stage.emit(ember ? 'smoke' : 'frostMist', head, { count: 14, direction: toKing.clone(), speed: 2.5, scale: 0.8 });
         if (ember) stage.emit('embers', head, { count: 14, direction: toKing.clone(), speed: 3 });
         stage.emit('dustPuff', home.clone().setY(0.05), { count: 8, scale: 0.9 });
+        stage.bus('land', { faction: a.faction, role: 'knight', strength: 0.5 }); // forelegs come down
         ctx.camera.shake(0.2);
       });
       return P0 + 1.05;
@@ -152,6 +154,7 @@ export function buildCheck(stage: Stage, kingSquare: Square): number {
   if (prov.hasClip('Taunt')) {
     tauntEnd = stage.clip(prov, 'Taunt', P0, 1.6);
     stage.at(P0 + 0.4, () => stage.emit(prov.faction === 'emberhold' ? 'sparks' : 'iceGlitter', socketPos(prov, 'socket_weapon_R', new Vector3()), { count: 14, scale: 0.7 }));
+    if (hasShield(prov.role)) stage.at(P0 + 0.45, () => stage.bus('shield:flash', { faction: prov.faction }));
   } else {
     tauntEnd = proceduralTaunt(stage, prov, king, P0);
   }

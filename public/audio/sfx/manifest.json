@@ -1,6 +1,46 @@
 {
  "version": 1,
  "entries": {
+  "armour:hit:emberhold": {
+   "files": [
+    "armour_hit_emberhold__0.mp3",
+    "armour_hit_emberhold__1.mp3",
+    "armour_hit_emberhold__2.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "cooldown": 0.06
+  },
+  "armour:hit:emberhold:heavy": {
+   "files": [
+    "armour_hit_emberhold_heavy__0.mp3",
+    "armour_hit_emberhold_heavy__1.mp3",
+    "armour_hit_emberhold_heavy__2.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2,
+   "cooldown": 0.1
+  },
+  "armour:hit:rime": {
+   "files": [
+    "armour_hit_rime__0.mp3",
+    "armour_hit_rime__1.mp3",
+    "armour_hit_rime__2.mp3"
+   ],
+   "gain": 0.75,
+   "priority": 2,
+   "cooldown": 0.06
+  },
+  "armour:hit:rime:heavy": {
+   "files": [
+    "armour_hit_rime_heavy__0.mp3",
+    "armour_hit_rime_heavy__1.mp3",
+    "armour_hit_rime_heavy__2.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2,
+   "cooldown": 0.1
+  },
   "attack:whoosh:bishop": {
    "files": [
     "attack_whoosh_bishop__0.mp3",
@@ -391,6 +431,78 @@
    "gain": 0.8,
    "priority": 2
   },
+  "land:emberhold": {
+   "files": [
+    "land_emberhold_s2__0.mp3",
+    "land_emberhold_s2__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:emberhold:s1": {
+   "files": [
+    "land_emberhold_s1__0.mp3",
+    "land_emberhold_s1__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:emberhold:s2": {
+   "files": [
+    "land_emberhold_s2__0.mp3",
+    "land_emberhold_s2__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:emberhold:s3": {
+   "files": [
+    "land_emberhold_s3__0.mp3",
+    "land_emberhold_s3__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:rime": {
+   "files": [
+    "land_rime_s2__0.mp3",
+    "land_rime_s2__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:rime:s1": {
+   "files": [
+    "land_rime_s1__0.mp3",
+    "land_rime_s1__1.mp3"
+   ],
+   "gain": 0.6,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:rime:s2": {
+   "files": [
+    "land_rime_s2__0.mp3",
+    "land_rime_s2__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "cooldown": 0.05
+  },
+  "land:rime:s3": {
+   "files": [
+    "land_rime_s3__0.mp3",
+    "land_rime_s3__1.mp3"
+   ],
+   "gain": 0.95,
+   "priority": 2,
+   "cooldown": 0.05
+  },
   "loading:done": {
    "files": [
     "loading_done__0.mp3"
@@ -518,6 +630,104 @@
    "gain": 0.95,
    "priority": 3
   },
+  "shield:break:emberhold": {
+   "files": [
+    "shield_break_emberhold__0.mp3",
+    "shield_break_emberhold__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "shield:break:rime": {
+   "files": [
+    "shield_break_rime__0.mp3",
+    "shield_break_rime__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 3
+  },
+  "shield:flash:emberhold": {
+   "files": [
+    "shield_flash_emberhold__0.mp3",
+    "shield_flash_emberhold__1.mp3",
+    "shield_flash_emberhold__2.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "cooldown": 0.08
+  },
+  "shield:flash:rime": {
+   "files": [
+    "shield_flash_rime__0.mp3",
+    "shield_flash_rime__1.mp3",
+    "shield_flash_rime__2.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "cooldown": 0.08
+  },
+  "slide:emberhold": {
+   "files": [
+    "slide_emberhold__0.mp3",
+    "slide_emberhold__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "preload": true,
+   "loop": {
+    "start": 0.1,
+    "end": 2.5
+   }
+  },
+  "slide:emberhold:start": {
+   "files": [
+    "slide_emberhold_start__0.mp3",
+    "slide_emberhold_start__1.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "preload": true
+  },
+  "slide:emberhold:stop": {
+   "files": [
+    "slide_emberhold_stop__0.mp3",
+    "slide_emberhold_stop__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2,
+   "preload": true
+  },
+  "slide:rime": {
+   "files": [
+    "slide_rime__0.mp3",
+    "slide_rime__1.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2,
+   "preload": true,
+   "loop": {
+    "start": 0.1,
+    "end": 2.5
+   }
+  },
+  "slide:rime:start": {
+   "files": [
+    "slide_rime_start__0.mp3",
+    "slide_rime_start__1.mp3"
+   ],
+   "gain": 0.85,
+   "priority": 2,
+   "preload": true
+  },
+  "slide:rime:stop": {
+   "files": [
+    "slide_rime_stop__0.mp3",
+    "slide_rime_stop__1.mp3"
+   ],
+   "gain": 0.9,
+   "priority": 2,
+   "preload": true
+  },
   "spell:emberhold": {
    "files": [
     "spell_emberhold__0.mp3",
@@ -571,6 +781,13 @@
    "gain": 0.6,
    "priority": 1,
    "preload": true
+  },
+  "sting:draw": {
+   "files": [
+    "sting_draw__0.mp3"
+   ],
+   "gain": 0.8,
+   "priority": 2
   },
   "summon:emberhold": {
    "files": [

@@ -8,7 +8,7 @@ import { FightFrame } from './fightFrame';
 import { pickShot } from './shotPicker';
 import { CHOREOGRAPHIES } from './choreographies';
 import type { AttackPlacement, CaptureEnv, ChoreoPlan, ResolvePlacement } from './choreographies/types';
-import { clamp, flatDir, flatDist, socketPos, wrapPi } from './common';
+import { clamp, flatDir, flatDist, hasShield, socketPos, wrapPi } from './common';
 import { ShatterJob } from './shatterJob';
 import { perpToSeat, type ShotInputs } from './shots';
 import type { Stage } from './stage';
@@ -55,10 +55,12 @@ export function buildOffCapture(stage: Stage, { attacker, defender }: CaptureAct
   bus.emit('capture:begin', { attacker: attacker.role, defender: defender.role, attackerFaction: attacker.faction, defenderFaction: defender.faction, square: move.to });
   attacker.setYaw(yawToward(A, D));
   stage.bus('attack:whoosh', { role: attacker.role, faction: attacker.faction });
-  stage.moveTo(attacker, To, 0, 0.35, 'power2.in');
+  stage.glide(attacker, To, 0, 0.35, 'power2.in');
   stage.at(0.28, () => {
+    if (hasShield(defender.role)) stage.bus('shield:flash', { faction: defender.faction });
     stage.bus('capture:impact', { attacker: attacker.role, defender: defender.role, attackerFaction: attacker.faction, defenderFaction: defender.faction, heavy: false });
     ctx.fx.flash(defender);
+    if (hasShield(defender.role)) stage.bus('shield:break', { faction: defender.faction });
     job.run({ impulseDir: dir, magnitude: 0.8 });
   });
   stage.yaw(attacker, restYaw(attacker.side), 0.3, 0.15);
@@ -181,6 +183,8 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   const p1 = new Vector3(); const p2 = new Vector3();
   let sampled = false;
   stage.at(Math.max(0, plan.impactAt - 0.06), () => { socketPos(attacker, 'socket_weapon_R', p1); sampled = true; });
+  // a shield-bearing defender catches the blow on the shield: bright parry ring a hair before the hit lands
+  if (hasShield(defender.role)) stage.at(Math.max(0, plan.impactAt - 0.04), () => bus.emit('shield:flash', { faction: defender.faction }));
   stage.at(plan.impactAt, () => {
     bus.emit('capture:impact', { attacker: attacker.role, defender: defender.role, attackerFaction: attacker.faction, defenderFaction: defender.faction, heavy: plan.heavy });
     stage.warp.play(warp);
@@ -202,6 +206,7 @@ export function buildFullCapture(stage: Stage, { attacker, defender }: CaptureAc
   const hitEnd = stage.poseClip(defender, 'HitReact', plan.holdHitReact ? 0.55 : 0.6, plan.impactAt, 0.12);
   const shatterAt = hitEnd + (plan.shatterDelay ?? 0);
   stage.at(shatterAt, () => {
+    if (hasShield(defender.role)) bus.emit('shield:break', { faction: defender.faction }); // the shield goes with the body
     fx.flash(defender);
     camera.shake(plan.trauma * 0.6);
     const vel = sampled ? p2.clone().sub(p1) : null;

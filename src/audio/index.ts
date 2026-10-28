@@ -4,6 +4,24 @@ import { SIDE_FACTION } from '../contracts';
 import { createSfx, type SfxPlayer } from './sfx';
 import { createSamplePlayer, preloadSfx, type PlayOpts, type SamplePlayer } from './samples';
 import { createScore, type Score } from './score';
+import {
+  AUDIO_CATEGORIES, categoryOf, getCategoryVolume, onCategoryChange, setCategoryVolume as storeCategoryVolume,
+  type AudioCategory, type SfxCategory,
+} from './categories';
+
+export { AUDIO_CATEGORIES, CATEGORY_LABEL, categoryOf, getCategoryVolume, setCategoryVolume } from './categories';
+export type { AudioCategory } from './categories';
+
+/** The AudioBus plus the category mixer (not part of the lead-owned contract; the settings UI may cast to this). */
+export interface AudioBusExt extends AudioBus {
+  /** Per-category gain 0..1 (Music / Effects / Ambience / Interface), persisted in localStorage. */
+  setCategoryVolume(cat: AudioCategory, v: number): void;
+  getCategoryVolume(cat: AudioCategory): number;
+}
+
+/** Per-role weight of the sliding grind: heavy pieces pitch down and bite harder. */
+const SLIDE_PITCH: Record<Role, number> = { pawn: 1.12, knight: 1.0, bishop: 1.06, rook: 0.86, queen: 0.95, king: 0.8 };
+const SLIDE_VOL: Record<Role, number> = { pawn: 0.8, knight: 0.85, bishop: 0.8, rook: 1, queen: 0.95, king: 1 };
 
 const DB_NAME = 'battle-chess';
 const STORE = 'audio';
@@ -52,11 +70,13 @@ async function bundledThemeUrl(): Promise<string | null> {
   return null;
 }
 
-export function createAudioBus(): AudioBus {
+export function createAudioBus(): AudioBusExt {
   let ctx: AudioContext | null = null;
   let sfxOut: GainNode | null = null;
   let musicGain: GainNode | null = null;
-  let sfxPlayer: SfxPlayer | null = null;
+  const catOut = new Map<SfxCategory, GainNode>();
+  const synth = new Map<SfxCategory, SfxPlayer>();
+  let stopCatSub: (() => void) | null = null;
   let samples: SamplePlayer | null = null;
   let el: HTMLAudioElement | null = null;
   let objectUrl: string | null = null;
@@ -71,7 +91,7 @@ export function createAudioBus(): AudioBus {
   let score: Score | null = null;
   let duckTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const musicTarget = () => (musicOn && !hidden ? musicVol * duck : 0);
+  const musicTarget = () => (musicOn && !hidden ? musicVol * getCategoryVolume('music') * duck : 0);
 
   function fadeTo(target: number, secs = FADE): void {
     if (!ctx || !musicGain) return;
@@ -132,7 +152,7 @@ export function createAudioBus(): AudioBus {
   function onVisibility(hide: boolean): void {
     hidden = hide;
     if (!ctx) return;
-    if (hide) { fadeTo(0, 0.2); stopMusic(); } else { void ctx?.resume().catch(() => {}); playMusic(); fadeTo(musicTarget(), 0.6); }
+    if (hide) { samples?.stopAllLoops(0.05); fadeTo(0, 0.2); stopMusic(); } else { void ctx?.resume().catch(() => {}); playMusic(); fadeTo(musicTarget(), 0.6); }
   }
 
   const d = typeof document !== 'undefined' ? document : null;
@@ -145,12 +165,19 @@ export function createAudioBus(): AudioBus {
   /** Sample first (designed CC0 layers); procedural synth only if the file is missing or still decoding. */
   function play(key: string, fallback: SfxName | null, opts?: PlayOpts): void {
     if (samples?.play(key, opts)) return;
-    if (fallback) sfxPlayer?.play(fallback, opts);
+    if (fallback) synthFor(fallback)?.play(fallback, opts);
+  }
+  function synthFor(name: SfxName): SfxPlayer | null {
+    const cat = categoryOf(name);
+    let p = synth.get(cat);
+    if (!p && ctx && catOut.get(cat)) { p = createSfx(ctx, catOut.get(cat)!); synth.set(cat, p); }
+    return p ?? null;
   }
   const SHATTER_TIER: Record<Role, string> = { pawn: ':light', knight: '', bishop: '', rook: ':heavy', queen: ':heavy', king: ':heavy' };
   const HEAVY: ReadonlySet<Role> = new Set<Role>(['rook', 'queen', 'king']);
 
-  const bus: AudioBus = {
+  let events: EventBus | null = null;
+  const bus: AudioBusExt = {
     async unlock() {
       if (!unlocked) {
         unlocked = true;
@@ -161,11 +188,24 @@ export function createAudioBus(): AudioBus {
         sfxOut = ctx.createGain();
         sfxOut.gain.value = sfxVol;
         sfxOut.connect(comp);
+        for (const c of AUDIO_CATEGORIES) {
+          if (c === 'music') continue;
+          const g = ctx.createGain();
+          g.gain.value = getCategoryVolume(c);
+          g.connect(sfxOut);
+          catOut.set(c, g);
+        }
+        stopCatSub?.();
+        stopCatSub = onCategoryChange((c, v) => {
+          if (c === 'music') { fadeTo(musicTarget(), 0.15); return; }
+          const g = catOut.get(c);
+          if (g && ctx) g.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
+          if (c === 'ambience' && v <= 0.001) samples?.stopAllLoops(0.05);
+        });
         musicGain = ctx.createGain();
         musicGain.gain.value = 0;
         musicGain.connect(comp);
-        sfxPlayer = createSfx(ctx, sfxOut);
-        samples = createSamplePlayer(ctx, sfxOut);
+        samples = createSamplePlayer(ctx, (c) => catOut.get(c)!);
         score = createScore(ctx, musicGain);
         sourceReady = resolveSource();
       }
@@ -191,6 +231,9 @@ export function createAudioBus(): AudioBus {
       fadeTo(musicTarget(), 0.15);
     },
 
+    setCategoryVolume(cat, v) { storeCategoryVolume(cat, v); },
+    getCategoryVolume(cat) { return getCategoryVolume(cat); },
+
     /** True only for file tracks (theme / custom); the generated score does not count. */
     hasMusic: () => hasTrack,
 
@@ -204,6 +247,7 @@ export function createAudioBus(): AudioBus {
     },
 
     attach(eb: EventBus) {
+      events = eb;
       eb.on('move:step', (e) => {
         const key = e.role === 'knight' ? `step:knight:${e.faction}` : HEAVY.has(e.role) ? `step:heavy:${e.faction}` : `move:step:${e.faction}`;
         play(key, `move:step:${e.faction}`);
@@ -214,11 +258,16 @@ export function createAudioBus(): AudioBus {
         duck = DUCK; fadeTo(musicTarget(), 0.4); if (duckTimer) clearTimeout(duckTimer); duckTimer = setTimeout(unduck, 25000);
         // Decode the hit + shatter now (seconds ahead of the blow) so they never fall back to the synth.
         const df = e.defenderFaction;
-        samples?.warm([`hit:${e.attacker}:${e.attackerFaction}`, `shatter:${df}${SHATTER_TIER[e.defender]}`, `attack:whoosh:${e.attacker}${e.attackerFaction === 'rime' ? ':rime' : ''}`]);
+        const af = e.attackerFaction;
+        samples?.warm([`hit:${e.attacker}:${af}`, `shatter:${df}${SHATTER_TIER[e.defender]}`, `attack:whoosh:${e.attacker}${af === 'rime' ? ':rime' : ''}`,
+          `slide:${af}`, `slide:${af}:start`, `slide:${af}:stop`, `armour:hit:${af}`, `armour:hit:${af}:heavy`,
+          ...(e.attacker === 'rook' || e.attacker === 'knight' || e.attacker === 'queen' ? [`land:${af}:s2`, `land:${af}:s3`] : []),
+          ...(e.defender === 'pawn' ? [`shield:flash:${df}`, `shield:break:${df}`] : []),
+          ...(e.attacker === 'pawn' ? [`shield:flash:${af}`] : [])]);
         if (e.attacker === 'knight') play(`gallop:${e.attackerFaction}`, null, { delay: 0.15, volume: 0.9 });
       });
       eb.on('capture:end', unduck);
-      eb.on('game:start', () => { unduck(); samples?.warm(['check', 'mate', 'castle', 'promote:emberhold', 'promote:rime', 'kneel']); });
+      eb.on('game:start', () => { unduck(); samples?.warm(['check', 'mate', 'castle', 'promote:emberhold', 'promote:rime', 'kneel', 'slide:emberhold', 'slide:rime']); });
       eb.on('capture:impact', (e) => play(`hit:${e.attacker}:${e.attackerFaction}`, `impact:${e.defenderFaction}`, { volume: e.heavy ? 1 : 0.8 }));
       eb.on('capture:shatter', (e) => play(`shatter:${e.defenderFaction}${SHATTER_TIER[e.defender]}`, `shatter:${e.defenderFaction}`));
       eb.on('summon', (e) => bus.sfx(`summon:${e.faction}`));
@@ -226,7 +275,10 @@ export function createAudioBus(): AudioBus {
       eb.on('castle', () => bus.sfx('castle'));
       eb.on('promotion', (e) => { const f: Faction = SIDE_FACTION[e.side]; play(`promote:${f}`, 'promote', { pitch: f === 'rime' ? 1.12 : 1 }); });
       eb.on('check', () => bus.sfx('check'));
-      eb.on('game:over', (e) => { if (e.reason === 'checkmate') bus.sfx('mate'); });
+      eb.on('game:over', (e) => {
+        if (e.reason === 'checkmate') bus.sfx('mate');
+        else if (e.reason !== 'resign') play('sting:draw', null); // stalemate / draw: a hollow, unresolved horn
+      });
       eb.on('ui:select', () => bus.sfx('ui:select'));
       eb.on('ui:click', () => bus.sfx('ui:click'));
       // Combat flavour events (emitted by cinematics/fx); silent on the synth fallback.
@@ -238,6 +290,28 @@ export function createAudioBus(): AudioBus {
       });
       eb.on('taunt', (e) => play(e.role === 'knight' ? `rear:${e.faction}` : `taunt:${e.faction}`, null));
       eb.on('surrender', () => play('kneel', null));
+      // ---- contract v1.4: piece slides, shields, armour, landings
+      eb.on('move:slide', (e) => {
+        if (!samples) return;
+        const id = `${e.faction}:${e.role}`;
+        if (e.phase === 'start') {
+          const o = { speed: e.speed, pitch: SLIDE_PITCH[e.role], volume: SLIDE_VOL[e.role] };
+          if (samples.hasLoop(id)) { samples.updateLoop(id, o); return; }
+          if (samples.startLoop(id, `slide:${e.faction}`, o)) play(`slide:${e.faction}:start`, null, { volume: 0.7 * SLIDE_VOL[e.role], pitch: SLIDE_PITCH[e.role] });
+          else samples.warm([`slide:${e.faction}`, `slide:${e.faction}:start`, `slide:${e.faction}:stop`]); // not decoded yet: silent this once
+        } else if (samples.hasLoop(id)) {
+          samples.stopLoop(id);
+          play(`slide:${e.faction}:stop`, null, { volume: SLIDE_VOL[e.role], pitch: SLIDE_PITCH[e.role] });
+        }
+      });
+      eb.on('shield:flash', (e) => play(`shield:flash:${e.faction}`, null));
+      eb.on('shield:break', (e) => play(`shield:break:${e.faction}`, null));
+      eb.on('armour:hit', (e) => play(`armour:hit:${e.faction}${e.heavy ? ':heavy' : ''}`, null));
+      eb.on('land', (e) => {
+        const s = Math.min(1, Math.max(0, e.strength));
+        const tier = s < 0.34 ? 1 : s < 0.67 ? 2 : 3;
+        play(`land:${e.faction}:s${tier}`, null, { volume: 0.75 + 0.25 * s });
+      });
     },
   };
   // Diagnostics for sandbox/tests (not part of the AudioBus contract).
@@ -247,7 +321,13 @@ export function createAudioBus(): AudioBus {
     debug: () => ({
       kind: hasTrack ? 'file' : 'score', state: ctx?.state, paused: el?.paused, loop: el?.loop, currentTime: el?.currentTime ?? 0,
       scoreRunning: score?.running ?? false, ctxTime: ctx?.currentTime ?? 0, gain: musicGain?.gain.value ?? 0, duck, hidden,
+      loops: samples?.loopCount() ?? 0,
+      categories: Object.fromEntries(AUDIO_CATEGORIES.map((c) => [c, getCategoryVolume(c)])),
     }),
+    /** Sandbox: drive the slide loop directly (same path as the move:slide event). */
+    slide: (faction: Faction, role: Role, phase: 'start' | 'stop', speed: number) => {
+      events?.emit('move:slide', { faction, role, phase, speed });
+    },
   });
   return bus;
 }

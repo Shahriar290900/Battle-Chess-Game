@@ -24,6 +24,8 @@ export interface WalkOpts {
   dust?: boolean;
   /** Camera shake trauma per footfall (heavy walkers). */
   thud?: number;
+  /** Suppress the grinding-slide audio events for this walk (default: emit move:slide start/stop). */
+  slide?: boolean;
 }
 
 /** Max real time a sequence may take beyond its nominal length before the watchdog finishes it. */
@@ -50,6 +52,50 @@ export class Stage {
     this.done = new Promise<void>((r) => { this.resolveDone = r; });
     // kinematics look-at targets are always released first when the stage settles
     this.onSettle(() => { for (const a of this.looked) { try { this.ctx.kinematics?.lookAt(a, null); } catch { /* ignore */ } } this.looked.clear(); });
+    // a slide loop must never outlive the stage (skip / watchdog / quick all end here)
+    this.onSettle(() => this.stopSlides());
+  }
+
+  // ------------------------------------------------------------ audio: piece slides (contract v1.4 move:slide)
+
+  /** actor -> number of overlapping slide segments currently open (start is sent on 0 -> 1, stop on 1 -> 0). */
+  private readonly slides = new Map<PieceActor, number>();
+
+  /**
+   * Announce a ground slide of `actor` between master times `at` and `at + dur` as move:slide start / stop.
+   * `dist` is in board units (= squares) or a function evaluated when the slide starts (live position).
+   * speed = squares per real second (timeline time scale included). Stops are balanced and forced on settle.
+   */
+  slide(actor: PieceActor, at: number, dur: number, dist: number | (() => number)): void {
+    if (dur <= 0) return;
+    this.at(at, () => {
+      const d = typeof dist === 'function' ? dist() : dist;
+      if (d < 0.05) return;
+      const speed = (d / dur) * Math.max(0.1, this.tl.timeScale());
+      const n = this.slides.get(actor) ?? 0;
+      this.slides.set(actor, n + 1);
+      this.ctx.bus.emit('move:slide', { faction: actor.faction, role: actor.role, phase: 'start', speed });
+    });
+    this.at(at + dur, () => this.slideStop(actor));
+  }
+
+  private slideStop(actor: PieceActor, force = false): void {
+    const n = this.slides.get(actor) ?? 0;
+    if (n <= 0) return;
+    if (!force && n > 1) { this.slides.set(actor, n - 1); return; }
+    this.slides.delete(actor);
+    try { this.ctx.bus.emit('move:slide', { faction: actor.faction, role: actor.role, phase: 'stop', speed: 0 }); } catch { /* ignore */ }
+  }
+
+  private stopSlides(): void {
+    for (const a of [...this.slides.keys()]) this.slideStop(a, true);
+  }
+
+  /** moveTo that also announces a ground slide (short shoves, sidesteps, the off-mode lunge). */
+  glide(actor: PieceActor, to: { x: number; z: number }, at: number, dur: number, ease = 'power2.inOut'): number {
+    const end = this.moveTo(actor, to, at, dur, ease);
+    this.slide(actor, at, dur, () => Math.hypot(to.x - actor.root.position.x, to.z - actor.root.position.z));
+    return end;
   }
 
   // ------------------------------------------------------------ kinematics hooks (optional layer)
@@ -201,6 +247,7 @@ export class Stage {
     if (dist < 0.01) return at;
     const dur = clamp(dist / speed, o.minDur ?? 0.25, o.maxDur ?? 1.8);
     this.moveTo(actor, to, at, dur, o.ease ?? 'power1.inOut');
+    if (o.slide !== false) this.slide(actor, at, dur, dist);
     if (o.gait !== false && actor.hasClip('Move')) {
       const md = Math.max(0.2, actor.clipDuration('Move'));
       const g = { t: 0 };
@@ -221,9 +268,9 @@ export class Stage {
     return at + dur;
   }
 
-  /** One parabolic hop between two points; footfall event + puff on landing. */
+  /** One parabolic hop between two points; footfall + land events and a puff on landing. */
   hop(actor: PieceActor, from: { x: number; z: number }, to: { x: number; z: number }, at: number, dur: number, height: number,
-    o: { puff?: ParticlePreset; step?: boolean; onLand?: () => void } = {}): number {
+    o: { puff?: ParticlePreset; step?: boolean; onLand?: () => void; landStrength?: number } = {}): number {
     const g = { p: 0 };
     this.killOn(g);
     this.tl.to(g, {
@@ -236,7 +283,10 @@ export class Stage {
     }, at);
     this.at(at + dur, () => {
       actor.root.position.y = 0;
-      if (o.step !== false) this.ctx.bus.emit('move:step', { faction: actor.faction, role: actor.role });
+      if (o.step !== false) {
+        this.ctx.bus.emit('move:step', { faction: actor.faction, role: actor.role });
+        this.ctx.bus.emit('land', { faction: actor.faction, role: actor.role, strength: o.landStrength ?? 0.4 });
+      }
       if (o.puff) this.ctx.fx.emit(o.puff, new Vector3(to.x, 0.05, to.z), { count: 8, scale: 0.7 });
       o.onLand?.();
     });

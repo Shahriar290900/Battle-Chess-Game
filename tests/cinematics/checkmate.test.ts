@@ -91,3 +91,13 @@ describe('checkmate: the king surrenders, the losing side drops its weapons', ()
     }
   });
 });
+
+describe('checkmate audio', () => {
+  it('the mated king lands on its knees (land event) and no slide loop is left open', async () => {
+    const { rig, ksq } = mateRig('rime');
+    await runUntil(createSequencePlayer().checkmate(rig.ctx, ksq), 30000);
+    expect(rig.events.some((e) => e.name === 'land' && e.payload.role === 'king')).toBe(true);
+    expect(rig.events.filter((e) => e.name === 'move:slide' && e.payload.phase === 'start').length).toBe(rig.events.filter((e) => e.name === 'move:slide' && e.payload.phase === 'stop').length);
+    await drain();
+  });
+});

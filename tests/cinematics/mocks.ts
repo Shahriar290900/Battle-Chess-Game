@@ -274,7 +274,7 @@ export interface Rig {
   kin: MockKinematics | undefined;
 }
 
-const EVENT_NAMES = ['capture:begin', 'capture:impact', 'capture:shatter', 'capture:end', 'attack:whoosh', 'summon', 'spell', 'move:step', 'castle', 'promotion', 'taunt', 'clash', 'weapon:drop', 'surrender'] as const;
+const EVENT_NAMES = ['capture:begin', 'capture:impact', 'capture:shatter', 'capture:end', 'attack:whoosh', 'summon', 'spell', 'move:step', 'castle', 'promotion', 'taunt', 'clash', 'weapon:drop', 'surrender', 'move:slide', 'shield:flash', 'shield:break', 'armour:hit', 'land'] as const;
 
 export function makeRig(move: MoveResult, setup: (board: MockBoard) => void, over: Partial<Settings> = {}, extra: { actorOpts?: ActorOpts; hang?: boolean; seatZ?: 1 | -1; kinematics?: boolean } = {}): Rig {
   const board = new MockBoard(extra.actorOpts);

@@ -69,3 +69,9 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | undefined
     p.then((v) => { clearTimeout(id); resolve(v); }, () => { clearTimeout(id); resolve(undefined); });
   });
 }
+
+/**
+ * Shield-bearing pieces (audio cues shield:flash / shield:break): the Emberhold Shieldbearer's forge-ring shield and
+ * the Rime Thrall's ice guard. Every other role fights with a weapon/spell only.
+ */
+export const hasShield = (role: string) => role === 'pawn';

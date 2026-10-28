@@ -34,6 +34,7 @@ export function buildCastle(stage: Stage, king: PieceActor, rook: PieceActor): v
   stage.at(hopEnd, () => {
     rook.root.position.set(rB.x, 0, rB.z);
     ctx.bus.emit('move:step', { faction: rook.faction, role: 'rook' });
+    ctx.bus.emit('land', { faction: rook.faction, role: 'rook', strength: 0.8 }); // dropped from 2 units
     ctx.fx.emit(rook.faction === 'emberhold' ? 'dustPuff' : 'frostMist', rB.clone().setY(0.05), { count: 8, scale: 0.8 });
   });
   const rookEnd = stage.yaw(rook, restYaw(rook.side), hopEnd, 0.25);
@@ -164,7 +165,10 @@ export function buildCheckmate(stage: Stage, kingSquare: Square): void {
   stage.at(KING_AT, () => stage.bus('surrender', { side: king.side }));
   stage.at(KING_AT, () => stage.warp.play({ segments: [{ scale: 0.6, seconds: 1.1 }], ramp: 0.7 }));
   const kingEnd = surrender(king, KING_AT);
-  stage.at(KING_AT + 0.7, () => { camera.shake(0.3); fx.emit('dustPuff', K.clone().setY(0.05), { count: 10, scale: 1 }); });
+  stage.at(KING_AT + 0.7, () => {
+    camera.shake(0.3); fx.emit('dustPuff', K.clone().setY(0.05), { count: 10, scale: 1 });
+    ctx.bus.emit('land', { faction: king.faction, role: 'king', strength: 0.7 }); // the knees meet the stone
+  });
 
   // ---- every other piece of the losing side drops its weapon, staggered
   let lastEnd = kingEnd;

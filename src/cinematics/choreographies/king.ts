@@ -34,6 +34,7 @@ export const king: Choreography = (e) => {
     const spikesAt = Math.max(a.attackAt, a.impactAt - 0.8);
     stage.at(spikesAt, () => {
       stage.bus('spell', { faction });
+      stage.bus('armour:hit', { faction: e.defFaction, heavy: true }); // the spikes punch up through the plate
       stage.safe(() => e.ctx.fx.iceSpikes(D.clone(), 7));
       e.ctx.fx.decal(D.clone(), 'frost');
     });

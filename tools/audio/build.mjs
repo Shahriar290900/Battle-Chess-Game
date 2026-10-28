@@ -25,25 +25,28 @@ run('python3', [join(here, 'design.py'), ...only]);
 const reg = JSON.parse(readFileSync(join(here, 'work', 'registry.json'), 'utf8'));
 const outDir = join(root, 'public', 'audio', 'sfx');
 mkdirSync(outDir, { recursive: true });
-const entries = {};
+// --only rebuilds just those keys and merges them over the shipped manifest (the work/ registry is not kept)
+const manifestPath = join(outDir, 'manifest.json');
+const entries = only.length && existsSync(manifestPath) ? { ...JSON.parse(readFileSync(manifestPath, 'utf8')).entries } : {};
 for (const [key, e] of Object.entries(reg.entries)) {
   const files = [];
   for (const base of e.files) {
     const src = join(here, 'work', 'out', `${base}.wav`);
     const name = `${base}.mp3`;
-    const kbps = e.priority === 3 ? 112 : 96;
+    const kbps = e.priority === 3 ? 112 : e.loop ? 80 : 96;
     execFileSync(ffmpeg, ['-v', 'error', '-y', '-i', src, '-ac', '1', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', `${kbps}k`, '-map_metadata', '-1', join(outDir, name)]);
     files.push(name);
   }
   const ent = { files, gain: e.gain, priority: e.priority };
   if (e.preload) ent.preload = true;
   if (e.cooldown) ent.cooldown = e.cooldown;
+  if (e.loop) ent.loop = e.loop;
   entries[key] = ent;
 }
 for (const [k, target] of Object.entries(reg.aliases)) if (entries[target]) entries[k] = { ...entries[target] };
 const keys = Object.keys(entries).sort();
 const manifest = { version: 1, entries: Object.fromEntries(keys.map((k) => [k, entries[k]])) };
-writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 1));
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 1));
 // remove stale mp3s not referenced
 const used = new Set(Object.values(entries).flatMap((e) => e.files));
 if (!only.length) for (const f of readdirSync(outDir)) if (f.endsWith('.mp3') && !used.has(f)) rmSync(join(outDir, f));

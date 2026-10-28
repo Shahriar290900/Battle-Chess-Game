@@ -52,6 +52,7 @@ export const queen: Choreography = (e) => {
       attacker.setYaw(base + TAU * p);
     });
     stage.at(a.impactAt, () => {
+      e.ctx.bus.emit('land', { faction, role: 'queen', strength: 0.85 }); // ground slam
       e.ctx.fx.shockwave(D.clone(), faction, 3.2);
       e.ctx.fx.decal(D.clone(), 'scorch');
       e.ctx.fx.decal(D.clone(), 'crack');
@@ -64,6 +65,8 @@ export const queen: Choreography = (e) => {
     // gliding sweeping cut: slide across the front of the target while the glaive arcs through it
     const gs = Math.max(t, a.impactAt - 0.55);
     stage.arc(attacker, (p, out) => out.set(lerp(G0.x, G1.x, p), 0, lerp(G0.z, G1.z, p)), gs, 0.9, 'power1.inOut', { faceTarget: D });
+    stage.slide(attacker, gs, 0.9, G0.distanceTo(G1)); // the glaive-sweep glides across the front of the target
+    stage.at(a.impactAt - 0.12, () => stage.bus('armour:hit', { faction: e.defFaction, heavy: false }));
     for (let k = 0; k < 6; k++) {
       const u = k / 5;
       stage.at(a.impactAt - 0.15 + u * 0.3, () => {
