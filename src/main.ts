@@ -7,7 +7,7 @@
 //                   settings, bus, post, controller, attract }.
 // Loading is driven by real work and reported on the bus as `loading:progress` ({loaded, total=100, stage}).
 import { gsap } from 'gsap';
-import { Raycaster, Vector2, type PerspectiveCamera, type Scene, type WebGLRenderer } from 'three';
+import { type PerspectiveCamera, type Scene, type WebGLRenderer } from 'three';
 import {
   bus, SIDE_FACTION, type AttractContext, type AttractMode, type AudioBus, type BoardApi, type CameraRig, type EventBus, type FxApi,
   type GameModeConfig, type KinematicsApi, type QualityTier, type SequencePlayer, type SettingsStore,
@@ -29,6 +29,7 @@ import { applyGraphics, createFpsOverlay } from './render/graphics';
 import { createLighting, prewarmCinematicLights } from './render/lighting';
 import { createMarkers } from './render/markers';
 import { createPost, createVignette } from './render/post';
+import { createLook, type Look } from './render/look';
 import { createQuality, createToaster } from './render/quality';
 import { detectDevice } from './render/device';
 import { createPerf } from './render/perf';
@@ -184,13 +185,15 @@ async function boot(): Promise<void> {
     const controller = createGameController({ presenter, ai, bus, settings });
     controller.setPhase('loading');
 
-    const gfxDeps = { settings, kit, lighting, post, fx, board, kinematics, tier: () => quality.tier, dynScale: () => quality.dynScale };
+    let look: Look | undefined;
+    const gfxDeps = { settings, kit, lighting, post, fx, board, kinematics, tier: () => quality.tier, dynScale: () => quality.dynScale, look: () => look };
     const quality = createQuality({
       kit, lighting, board, fx, post, platform, settings, device,
       renderFrame: (dt) => { board.update(dt); rig.update(dt); lighting.tick(dt, false); post.render(dt); },
       applyGraphics: () => applyGraphics(gfxDeps),
       notify: toast,
     });
+    look = createLook({ renderer: kit.renderer, lighting, post, canvas, tier: () => quality.tier, initial: settings.get().contrast });
     let benchmarking = false;
     let portraits: Portraits = {};
     await tracker.run(2, async () => { portraits = renderKingPortraits(kit.renderer, registry); });
@@ -246,7 +249,7 @@ async function boot(): Promise<void> {
     const ui = createUi({ root: uiRoot, controller, settings, bus, audio, loading, promotion, portraits: () => portraits, onStart: (c) => { void enterGame(c); }, learn: learnApi });
     // Learn screens consume Android back first (its handleBack is an optional extension of the module).
     platform.onBack(() => (learn as { handleBack?: () => boolean } | undefined)?.handleBack?.() || ui.handleBack());
-    createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
+    const boardInput = createBoardInput({ canvas, rig, board, controller, markers, settings, bus, isBlocked: () => ui.modalOpen });
     ui.hud.onLayout((px) => rig.setReserve(px));
 
     // ---- settings fan-out
@@ -260,6 +263,7 @@ async function boot(): Promise<void> {
       else if (key === 'animSpeed') rig.setSpeed(s.animSpeed);
       else if (key === 'musicEnabled' || key === 'musicVolume' || key === 'sfxVolume') syncAudio();
       else if (key === 'graphics') { applyGraphics(gfxDeps); fps.setVisible(s.graphics.showFps); }
+      else if (key === 'contrast') look?.set(s.contrast);
     });
 
     // ---- render loop (GSAP ticker: tweens update first, then we render the same frame). The FPS cap skips frames.
@@ -282,6 +286,7 @@ async function boot(): Promise<void> {
       perf.begin('misc');
       markers.update(time);
       lighting.update(time, rig.camera.position.z);
+      lighting.setSeatYaw(rig.seat === 'b' ? Math.PI : 0);
       lighting.tick(dt, sequences.running); // shadow refresh: a few Hz when idle, every frame during a capture
       rig.update(dt);
       perf.end('misc');
@@ -297,16 +302,14 @@ async function boot(): Promise<void> {
     // ---- debug / test hook
     if (import.meta.env.DEV || params.has('debug')) {
       (window as unknown as Record<string, unknown>).__bc = {
-        controller, rig, board, ui, settings, quality, bus, kit, post, fx, lighting, markers, services, attract,
+        controller, rig, board, ui, settings, quality, input: boardInput, bus, kit, post, fx, lighting, markers, services, attract,
         // screenshot / bench helpers: stop the render loop (tweens keep running), then draw single frames on demand
         loop: { pause: () => gsap.ticker.remove(frame), resume: () => gsap.ticker.add(frame), step: (ms = 50) => frame(gsap.ticker.time, ms) },
         squareToScreen: (sq: string) => rig.projectSquare(sq),
+        // What a pointer at these client coordinates resolves to: exactly the board input's own picking (tests aim with it).
         pick: (x: number, y: number) => {
-          const r = canvas.getBoundingClientRect();
-          const ray = new Raycaster();
-          ray.setFromCamera(new Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), rig.camera);
-          const a = board.pickActor(ray);
-          return { actor: a ? `${a.id}@${a.square}` : null, square: board.pickSquare(ray), blocked: ui.modalOpen, state: controller.state, top: document.elementFromPoint(x, y)?.className ?? null };
+          const r = boardInput.debugPick(x, y);
+          return { actor: r.actor, square: r.sq, blocked: ui.modalOpen, state: controller.state, top: document.elementFromPoint(x, y)?.className ?? null };
         },
         factionOf: (side: 'w' | 'b') => SIDE_FACTION[side],
       };

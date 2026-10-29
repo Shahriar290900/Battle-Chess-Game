@@ -13,6 +13,8 @@ import { parsePlacement } from '../core/rules';
 import type { AssetRegistryImpl } from '../assets/registry';
 import type { PieceActorImpl } from '../assets/pieceActor';
 import { makeContactShadowTexture } from './boardTextures';
+import { installPieceLook } from './pieceLook';
+import type { LedgeView } from '../camera/cameraRig';
 
 export interface CapturedPiece { faction: Faction; role: Role }
 
@@ -23,6 +25,10 @@ export interface Graveyard {
   setVisible(on: boolean): void;
   /** Every piece currently displayed (tests / debugging). */
   readonly count: number;
+  /** Pieces currently on the ledge of this faction. */
+  countOf(faction: Faction): number;
+  /** Where the camera should look to see the occupied part of this faction's ledge (free-look "View fallen"). */
+  viewOf(faction: Faction): LedgeView;
 }
 
 const INITIAL: Record<Role, number> = { pawn: 8, knight: 2, bishop: 2, rook: 2, queen: 1, king: 1 };
@@ -163,6 +169,18 @@ export function createGraveyard(d: { root: Group; registry: AssetRegistryImpl; b
   const api: Graveyard = {
     group,
     get count() { return total(); },
+    countOf(faction) { return ledges.find((l) => l.faction === faction)?.items.length ?? 0; },
+    viewOf(faction) {
+      const l = ledges.find((x) => x.faction === faction) ?? ledges[0];
+      const th = l.group.rotation.y, c = Math.cos(th), s = Math.sin(th);
+      const rows = Math.max(1, Math.ceil(l.items.length / 2));
+      const lz = ((rows - 1) / 2 - (ROWS - 1) / 2) * PITCH; // centre of the occupied rows (local z)
+      const half = Math.max(rows * PITCH / 2 + 0.2, 1.3);
+      return {
+        cx: l.group.position.x + lz * s, cz: l.group.position.z + lz * c,
+        fx: c, fz: -s, lx: s, lz: c, half,
+      };
+    },
     setVisible(on) { group.visible = on; },
     setLayout(next) {
       if (next === layout) return;
@@ -184,6 +202,7 @@ export function createGraveyard(d: { root: Group; registry: AssetRegistryImpl; b
           if (k >= 0) next.push(pool.splice(k, 1)[0]);
           else {
             const actor = d.registry.createGraveyardActor(c.faction, c.role);
+            installPieceLook(actor.model, c.faction);
             l.group.add(actor.root);
             const it = { piece: c, actor };
             next.push(it); added = it; addedCount++;

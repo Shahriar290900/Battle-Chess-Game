@@ -4,6 +4,7 @@
 import type { Faction, Role, Side, SettingsStore } from '../contracts';
 import { SIDE_FACTION } from '../contracts';
 import type { GameController, GameSnapshot } from '../core/game';
+import { eloLabel } from '../core/ai/strength';
 import { REASON_LABEL, ROLE_VALUE, sideName } from './glyphs';
 import { ICON, crest, h, pieceIcon } from './dom';
 import { iconButton } from './controls';
@@ -20,6 +21,11 @@ export interface Hud {
   toggleJournal(): void;
 }
 
+const CAM_ICON = {
+  recenter: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 3v4M12 17v4M3 12h4M17 12h4',
+  fallen: 'M7 20V10a5 5 0 0 1 10 0v10zM4 20h16M12 9v6M9.500 12h5',
+} as const;
+
 const byValue = (a: Role, b: Role) => ROLE_VALUE[b] - ROLE_VALUE[a];
 const adv = (roles: Role[]) => roles.reduce((n, r) => n + ROLE_VALUE[r], 0);
 
@@ -29,7 +35,8 @@ export function createHud(controller: GameController, settings: SettingsStore, h
   const crestHost = h('span', { class: 'crest-host' });
   const who = h('span', { class: 'who' });
   const st = h('span', { class: 'st' });
-  const turn = h('div', { class: 'turn', role: 'status', 'aria-live': 'polite' }, crestHost, h('span', { class: 'txt' }, who, st));
+  const foe = h('span', { class: 'foe', hidden: true, 'data-tip': 'Your opponent|The computer plays at this Elo strength. Change it under Play vs Computer.' });
+  const turn = h('div', { class: 'turn', role: 'status', 'aria-live': 'polite' }, crestHost, h('span', { class: 'txt' }, who, st, foe));
 
   // ---- captured rows
   const rowW = h('div', { class: 'tray', 'aria-label': 'Pieces taken by Emberhold' }), rowB = h('div', { class: 'tray', 'aria-label': 'Pieces taken by the Rime Host' });
@@ -40,7 +47,19 @@ export function createHud(controller: GameController, settings: SettingsStore, h
   const skipBtn = iconButton(ICON.skip, 'Skip animation', handlers.onSkip, '', 'Skip|Jump to the end of the current animation.', 'Space');
   skipBtn.hidden = true;
   const journalBtn = iconButton(ICON.list, 'Move list', () => settings.set('showMoveList', !settings.get().showMoveList), '', 'Move list|Show or hide the journal of moves.', 'J');
-  const tools = h('div', { class: 'tools' }, skipBtn, undoBtn, journalBtn,
+  // Free-look camera (see ui/boardInput.ts): the buttons only post window events, the board input owns the camera commands.
+  const camCmd = (cmd: 'recenter' | 'fallen') => () => window.dispatchEvent(new CustomEvent('bc:camera', { detail: cmd }));
+  const recenterBtn = iconButton(CAM_ICON.recenter, 'Recenter camera', camCmd('recenter'), '', 'Recenter|Ease the camera back to your seat. Drag empty space or use two fingers to look around; wheel or pinch to zoom.', 'R');
+  recenterBtn.hidden = true;
+  const fallenBtn = iconButton(CAM_ICON.fallen, 'View fallen', camCmd('fallen'), '', 'View fallen|Fly to the pieces captured so far. Press again for the other side, then back to the board.', 'G');
+  window.addEventListener('bc:camera-state', (e) => {
+    const st = (e as CustomEvent<{ fallen: boolean; off: boolean }>).detail;
+    recenterBtn.hidden = !st.off;
+    fallenBtn.classList.toggle('lit', st.fallen);
+    fallenBtn.setAttribute('aria-pressed', String(st.fallen));
+    queueLayout();
+  });
+  const tools = h('div', { class: 'tools' }, skipBtn, undoBtn, recenterBtn, fallenBtn, journalBtn,
     iconButton(ICON.gear, 'Settings', handlers.onSettings, '', 'Settings|Graphics, audio and gameplay options.'),
     iconButton(ICON.menu, 'Pause menu', handlers.onMenu, '', 'Pause menu|Resume, resign, or return to the main menu.', 'Esc'));
 
@@ -66,6 +85,7 @@ export function createHud(controller: GameController, settings: SettingsStore, h
   }
   const queueLayout = () => { if (!layoutRaf) layoutRaf = requestAnimationFrame(notifyLayout); };
   window.addEventListener('resize', queueLayout);
+  window.visualViewport?.addEventListener('resize', queueLayout);
 
   // ---- state
   const text = (node: HTMLElement, t: string) => { if (node.textContent !== t) node.textContent = t; };
@@ -82,6 +102,9 @@ export function createHud(controller: GameController, settings: SettingsStore, h
     else if (s.busy) status = 'Moving';
     else status = vsAi ? 'Your move' : 'To move';
     text(st, status);
+    const elo = vsAi ? controller.opponentElo : null;
+    foe.hidden = elo === null;
+    if (elo !== null) text(foe, `vs ${eloLabel(elo)}`);
     turn.classList.toggle('check', !!s.check && !s.result);
     turn.classList.toggle('thinking', s.thinking);
   }

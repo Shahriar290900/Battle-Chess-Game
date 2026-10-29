@@ -219,8 +219,8 @@ export function createHall(scene: Scene, opts: { weak: boolean }): Hall {
   const addFlame = (x: number, y: number, z: number, warm: boolean, s: number) => {
     const c = warm ? [3.2, 1.35, 0.35] : [0.8, 2.2, 3.4];
     glows.push({ x, y: y + 2.4 * s, z, w: 0.95 * s, h: 1.8 * s, r: c[0], g: c[1], b: c[2], phase: x * 0.7 + z, kind: 1 });   // flame core (flickers)
-    glows.push({ x, y: y + 2.5 * s, z, w: 2.6 * s, h: 3.0 * s, r: c[0] * 0.2, g: c[1] * 0.2, b: c[2] * 0.2, phase: x + z * 0.3, kind: 2 }); // halo (breathes)
-    glows.push({ x, y: y + 2.3 * s, z, w: 6.5 * s, h: 6.5 * s, r: c[0] * 0.05, g: c[1] * 0.05, b: c[2] * 0.05, phase: 0, kind: 0 });       // wide ambient bloom
+    glows.push({ x, y: y + 2.5 * s, z, w: 2.6 * s, h: 3.0 * s, r: c[0] * 0.12, g: c[1] * 0.12, b: c[2] * 0.12, phase: x + z * 0.3, kind: 2 }); // halo (breathes)
+    glows.push({ x, y: y + 2.3 * s, z, w: 6.5 * s, h: 6.5 * s, r: c[0] * 0.03, g: c[1] * 0.03, b: c[2] * 0.03, phase: 0, kind: 0 });       // wide ambient bloom
   };
   for (const [x, z, warm] of HALL_BRAZIERS) addFlame(x, -1.25, z, warm, 1);
   for (const [x, z, warm] of CORNERS) addFlame(x, -0.09, z, warm, 0.2); // 0.2 scale: flame sits just above the frame cup

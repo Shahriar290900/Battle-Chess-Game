@@ -19,6 +19,8 @@ export interface Markers {
   show(targets: HintTarget[]): void;
   clear(): void;
   setSelected(sq: Square | null): void;
+  /** Pointer-over / drop-target highlight (a thin bright frame). `snap` = the square a drag would drop on. null clears. */
+  setHover(sq: Square | null, snap?: boolean): void;
   setLastMove(from: Square | null, to?: Square | null): void;
   setColorBlind(on: boolean): void;
   /** Persistent coloured tile (check, lessons). `color === null` removes it. */
@@ -211,11 +213,11 @@ function overlayMaterial(spec: MatSpec): ShaderMaterial {
   });
 }
 
-type Kind = 'moves' | 'captures' | 'selected' | 'last' | 'tints';
-const KINDS: Kind[] = ['moves', 'captures', 'selected', 'last', 'tints'];
-const CAP: Record<Kind, number> = { moves: 40, captures: 24, selected: 1, last: 2, tints: 10 };
-const Y: Record<Kind, number> = { moves: 0.013, captures: 0.013, selected: 0.012, last: 0.01, tints: 0.011 };
-const ORDER: Record<Kind, number> = { moves: 5, captures: 5, selected: 4, last: 2, tints: 3 };
+type Kind = 'moves' | 'captures' | 'selected' | 'last' | 'tints' | 'hover';
+const KINDS: Kind[] = ['moves', 'captures', 'selected', 'last', 'tints', 'hover'];
+const CAP: Record<Kind, number> = { moves: 40, captures: 24, selected: 1, last: 2, tints: 10, hover: 1 };
+const Y: Record<Kind, number> = { moves: 0.013, captures: 0.013, selected: 0.012, last: 0.01, tints: 0.011, hover: 0.014 };
+const ORDER: Record<Kind, number> = { moves: 5, captures: 5, selected: 4, last: 2, tints: 3, hover: 6 };
 
 interface Layer { mesh: InstancedMesh; phase: InstancedBufferAttribute; n: number }
 
@@ -227,6 +229,7 @@ export function createMarkers(scene: Scene, opts: MarkerOptions = {}): Markers {
   const geo = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 
   const spec = (style: HighlightStyle, kind: Kind, blind: boolean, faction: Faction): MatSpec => {
+    if (kind === 'hover') return { map: t.frame, blending: AdditiveBlending, opacity: 0.8, pulse: 0.08, speed: 5, boost: 1.1 };
     switch (style) {
       case 'glow':
         if (kind === 'moves') return { map: blind ? t.diamond : t.disc, blending: AdditiveBlending, opacity: 0.95, pulse: 0.12, speed: 3, boost: 1.5 };
@@ -322,6 +325,7 @@ export function createMarkers(scene: Scene, opts: MarkerOptions = {}): Markers {
 
   // ---- state (so a style / palette switch can rebuild the instances)
   let targets: HintTarget[] = [];
+  let hover: Square | null = null, hoverSnap = false;
   let selected: Square | null = null;
   let lastFrom: Square | null = null, lastTo: Square | null = null;
   const tints = new Map<Square, number>();
@@ -335,6 +339,11 @@ export function createMarkers(scene: Scene, opts: MarkerOptions = {}): Markers {
     }
   };
 
+  const rebuildHover = (flushNow = true) => {
+    layers.hover.n = 0;
+    if (hover) put('hover', layers.hover.n++, hover, hoverSnap ? 1.0 : 0.94, hoverSnap ? 0xfff7e0 : blind ? 0xe6f0ff : 0xe9dcc0, 0);
+    if (flushNow) flush('hover');
+  };
   const rebuild = () => {
     const c = pal(), z = sizes();
     layers.moves.n = layers.captures.n = 0;
@@ -347,6 +356,7 @@ export function createMarkers(scene: Scene, opts: MarkerOptions = {}): Markers {
     layers.last.n = 0;
     if (lastFrom) put('last', layers.last.n++, lastFrom, z.last, c.lastFrom, 0);
     if (lastTo) put('last', layers.last.n++, lastTo, z.last, c.lastTo, 0);
+    rebuildHover(false);
     layers.tints.n = 0;
     for (const [sq, color] of tints) { if (layers.tints.n < CAP.tints) put('tints', layers.tints.n++, sq, z.tint, color, Math.random() * 6.28); }
     for (const k of KINDS) flush(k);
@@ -372,6 +382,11 @@ export function createMarkers(scene: Scene, opts: MarkerOptions = {}): Markers {
       const f = sq ? opts.getFaction?.(sq) : undefined;
       if (f && f !== faction) { faction = f; if (style === 'runes') rebuildMaterials(); }
       rebuild();
+    },
+    setHover(sq, snap = false) {
+      if (sq === hover && snap === hoverSnap) return;
+      hover = sq; hoverSnap = snap;
+      rebuildHover();
     },
     setLastMove(from, to) { lastFrom = from; lastTo = to ?? null; rebuild(); },
     setColorBlind(on) { if (on === blind) return; blind = on; rebuildMaterials(); rebuild(); },

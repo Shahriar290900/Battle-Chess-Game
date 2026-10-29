@@ -1,13 +1,14 @@
-// Renderer + scene bootstrap: sRGB output, ACES tone mapping (vivid, filmic roll-off), PCF shadows that are refreshed on demand,
+// Renderer + scene bootstrap: sRGB output, AgX tone mapping (gentle shoulder, no crushed shadows or clipped highlights), PCF shadows that are refreshed on demand,
 // a per-tier pixel-ratio cap and a runtime resolution scale. Sizing follows window.visualViewport (mobile URL bars), orientation
 // changes and safe areas; the canvas always fills the visual viewport.
-import { ACESFilmicToneMapping, PCFShadowMap, Scene, SRGBColorSpace, WebGLRenderer } from 'three';
+import { AgXToneMapping, PCFShadowMap, Scene, SRGBColorSpace, WebGLRenderer } from 'three';
 import type { QualityTier as Tier } from '../contracts';
 
 /** Cap on devicePixelRatio per tier. iGPUs and phones render at 1x (phones at most 1.25x on Medium/High, never above). */
 export const PIXEL_RATIO_CAP: Record<Tier, number> = { high: 1.75, medium: 1.25, low: 1 };
 
-export const EXPOSURE = 1.05;
+/** Baseline exposure of the Standard contrast preset (render/look.ts scales it for Soft / Vivid). */
+export const EXPOSURE = 1.0;
 
 export interface RenderKit {
   renderer: WebGLRenderer;
@@ -31,7 +32,7 @@ export function createRenderKit(canvas: HTMLCanvasElement, opts: { antialias?: b
     preserveDrawingBuffer: false, failIfMajorPerformanceCaveat: false,
   });
   renderer.outputColorSpace = SRGBColorSpace;
-  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMapping = AgXToneMapping;
   renderer.toneMappingExposure = EXPOSURE;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;

@@ -10,6 +10,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -60,6 +61,7 @@ scene.add(glow);
 
 const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50);
 const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);   // forge GLBs are EXT_meshopt_compression packed
 let composer, bloom, size = { w: 0, h: 0 };
 
 function setSize(w, h) {

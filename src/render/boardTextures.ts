@@ -79,6 +79,18 @@ export function makeMarbleTexture(size = 2048): CanvasTexture {
     trace(size * 0.005, 0.12, 80);
     trace(Math.max(1, size * 0.0016), 0.3, 90);
   }
+  // pale quartz veins: readable on the dark slate squares (barely visible on the light ones)
+  for (let i = 0; i < 16; i++) {
+    let x = r() * size, y = r() * size, ang = r() * Math.PI * 2;
+    g.lineCap = 'round';
+    for (const [w, a] of [[size * 0.006, 0.07], [Math.max(1.2, size * 0.0016), 0.22]] as const) {
+      g.strokeStyle = `rgba(238,240,244,${a})`; g.lineWidth = w;
+      g.beginPath(); g.moveTo(x, y);
+      let px = x, py = y, pa = ang;
+      for (let k = 0; k < 9; k++) { pa += (r() - 0.5) * 0.8; px += Math.cos(pa) * size * 0.06; py += Math.sin(pa) * size * 0.06; g.lineTo(px, py); }
+      g.stroke();
+    }
+  }
   // fine grain
   for (let i = 0; i < size * size * 0.04; i++) {
     const v = r() < 0.5 ? 40 : 235;
@@ -120,7 +132,7 @@ export function makeInlayTexture(size = 2048): CanvasTexture {
         for (const [cx, cy] of [[x, y], [x + s, y], [x, y + s], [x + s, y + s]]) {
           const rad = s * (0.28 + r() * 0.2);
           const rg = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
-          rg.addColorStop(0, `rgba(225,242,252,${0.3 * frost})`);
+          rg.addColorStop(0, `rgba(225,242,252,${0.13 * frost})`);
           rg.addColorStop(1, 'rgba(225,242,252,0)');
           g.fillStyle = rg;
           g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);

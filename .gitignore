@@ -19,3 +19,4 @@ tests/e2e/__screens__/
 tools/audio/raw/
 tools/audio/work/
 tests/playtest/out/
+perf/results/

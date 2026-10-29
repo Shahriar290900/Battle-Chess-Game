@@ -13,6 +13,7 @@ import { createGraveyard, type CapturedPiece, type Graveyard } from './graveyard
 import { parsePlacement } from '../core/rules';
 import type { AssetRegistryImpl } from '../assets/registry';
 import type { PieceActorImpl } from '../assets/pieceActor';
+import { installPieceLook } from './pieceLook';
 import { FRAME_SIZE, makeContactShadowTexture, makeFrameTexture, makeInlayTexture, makeMarbleTexture, makeSlabTexture } from './boardTextures';
 
 export interface BoardImpl extends BoardApi {
@@ -56,8 +57,9 @@ export interface BoardOptions {
 }
 
 // Bone marble / pale cool marble on light squares; basalt / blue slate on dark squares.
-const TILE_LIGHT_EMBER = new Color(0xcdbd9c), TILE_DARK_EMBER = new Color(0x54453a);
-const TILE_LIGHT_RIME = new Color(0xb9cbd9), TILE_DARK_RIME = new Color(0x364760);
+// Mid contrast (render-readability): lit light squares land near 70% luminance, dark ones near 30%.
+const TILE_LIGHT_EMBER = new Color(0xeddebb), TILE_DARK_EMBER = new Color(0x5a4c41);
+const TILE_LIGHT_RIME = new Color(0xdae6f0), TILE_DARK_RIME = new Color(0x3e506b);
 
 const idx = (sq: Square) => (Number(sq[1]) - 1) * 8 + FILES.indexOf(sq[0]);
 const sqOfIndex = (i: number): Square => FILES[i % 8] + String(Math.floor(i / 8) + 1);
@@ -181,7 +183,7 @@ export function createBoard(opts: BoardOptions): BoardImpl {
   let clock = 0;
   let defaultLod: 0 | 1 = 1;
   let frameNo = 0;
-  const addActor = (a: PieceActorImpl) => { actors.add(a); actorList.push(a); a.setLod(defaultLod); };
+  const addActor = (a: PieceActorImpl) => { actors.add(a); actorList.push(a); installPieceLook(a.model, a.faction); a.setLod(defaultLod); };
   const dropActor = (a: PieceActorImpl): boolean => {
     if (!actors.delete(a)) return false;
     actorList.splice(actorList.indexOf(a), 1);

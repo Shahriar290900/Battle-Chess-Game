@@ -1,12 +1,15 @@
-// Lighting rig: a warm shadow-casting key from the Emberhold side (+z), a cool rim from the Rime side (-z), a soft frontal fill, a
-// hemisphere fill and a themed PMREM environment (warm firelight one side, cold moonlight the other, bright overhead strip) so
+// Lighting rig: a warm shadow-casting key and a soft frontal fill on the seat's side, a cool rim from behind the pieces (the far
+// side of the board), a hemisphere fill and a themed PMREM environment (warm firelight one side, cold moonlight the other, bright overhead strip) so
 // stone and metal actually shine. No point lights: braziers glow through emissive + additive billboards (see hall.ts), so the
 // light count is constant and the same look holds on Low.
+//
+// The three directional lights swing with the seat (setSeatYaw) so the faces the player sees are always the lit ones and the rim
+// always outlines them from behind. Fill : key is about 1 : 2 so shadows are never crushed.
 //
 // Shadows: one directional map. It is not re-rendered every frame (shadowMap.autoUpdate = false): `tick()` refreshes it at a few
 // Hz when the board is idle and every frame (or every other frame) while something moves.
 import {
-  BoxGeometry, Color, DirectionalLight, FogExp2, Group, HemisphereLight, Mesh, MeshBasicMaterial, Object3D, PMREMGenerator,
+  BoxGeometry, Color, DirectionalLight, Vector3, FogExp2, Group, HemisphereLight, Mesh, MeshBasicMaterial, Object3D, PMREMGenerator,
   Scene as ThreeScene, ShaderMaterial, SphereGeometry, SpotLight, BackSide,
   type Scene, type WebGLRenderer,
 } from 'three';
@@ -16,6 +19,7 @@ import { createHall, type Hall } from './hall';
 export interface Lighting {
   key: DirectionalLight;
   rim: DirectionalLight;
+  fill: DirectionalLight;
   readonly hall: Hall;
   setShadowSize(px: number): void;
   setShadowsEnabled(on: boolean): void;
@@ -24,6 +28,10 @@ export interface Lighting {
   /** Ambient life: motes and flame flicker. The hall dressing itself is always shown. */
   setAmbient(on: boolean): void;
   setTier(tier: QualityTier): void;
+  /** Azimuth of the player's seat (0 = White, π = Black); the light rig eases toward it. */
+  setSeatYaw(yaw: number, instant?: boolean): void;
+  /** Multiplier for the cool rim light (contrast presets). */
+  setRimStrength(k: number): void;
   /** Flicker the braziers (real seconds). */
   update(time: number, camZ?: number): void;
   /** Call every frame: refreshes the shadow map when due. `busy` = something is moving (cinematic, drag...). */
@@ -102,8 +110,10 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer, opts: { we
   scene.fog = new FogExp2(0x2a2f44, 0.0105);
 
   // ---- direct lights (count never changes)
-  const key = new DirectionalLight(0xffc48a, 2.7);
-  key.position.set(5.5, 8.5, 8.5);
+  const KEY_I = 2.2, FILL_I = 1.1, RIM_I = 2.0; // fill : key = 1 : 2
+  const key = new DirectionalLight(0xffc48a, KEY_I);
+  const KEY_POS = new Vector3(5.5, 8.5, 8.5), RIM_POS = new Vector3(-4.5, 4.2, -10), FILL_POS = new Vector3(-3, 3.2, 9);
+  key.position.copy(KEY_POS);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.left = -7.8; key.shadow.camera.right = 7.8;
@@ -113,15 +123,15 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer, opts: { we
   key.shadow.normalBias = 0.035;
   scene.add(key, key.target);
 
-  const rim = new DirectionalLight(0x86b4ff, 2.1);
-  rim.position.set(-4.5, 4.2, -10);
+  const rim = new DirectionalLight(0x86b4ff, RIM_I);
+  rim.position.copy(RIM_POS);
   scene.add(rim, rim.target);
 
-  const fill = new DirectionalLight(0xffe7cf, 0.5);
-  fill.position.set(-3, 3.2, 9);
+  const fill = new DirectionalLight(0xffe7cf, FILL_I);
+  fill.position.copy(FILL_POS);
   scene.add(fill, fill.target);
 
-  scene.add(new HemisphereLight(0xa4b4d4, 0x5e4a38, 0.7));
+  scene.add(new HemisphereLight(0xa4b4d4, 0x5e4a38, 0.8));
 
   const hall = createHall(scene, { weak: !!opts.weak });
 
@@ -132,8 +142,22 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer, opts: { we
   let shadowAcc = 0, shadowDirty = true, shadowHz = 10, shadowBusyHz = 30;
   const refresh = () => { renderer.shadowMap.needsUpdate = true; shadowAcc = 0; shadowDirty = false; };
 
+  // ---- seat yaw: the rig rotates about the board centre; the shadow map follows (refreshed every frame while it swings)
+  let yaw = 0, yawGoal = 0;
+  const place = () => {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const set = (l: DirectionalLight, p: Vector3) => l.position.set(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
+    set(key, KEY_POS); set(rim, RIM_POS); set(fill, FILL_POS);
+  };
+  let swinging = false;
+
   const api: Lighting = {
-    key, rim, hall,
+    key, rim, fill, hall,
+    setSeatYaw(next, instant) {
+      yawGoal = next;
+      if (instant) { yaw = next; place(); shadowDirty = true; renderer.shadowMap.needsUpdate = true; }
+    },
+    setRimStrength(k) { rim.intensity = RIM_I * k; },
     setTier(tier) {
       hall.setTier(tier);
       shadowHz = tier === 'high' ? 15 : 10;
@@ -142,9 +166,16 @@ export function createLighting(scene: Scene, renderer: WebGLRenderer, opts: { we
     },
     update(time) { hall.update(time); },
     tick(dt, busy) {
+      const diff = Math.atan2(Math.sin(yawGoal - yaw), Math.cos(yawGoal - yaw));
+      swinging = Math.abs(diff) > 0.002;
+      if (swinging) {
+        yaw += Math.abs(diff) < 0.01 ? diff : diff * (1 - Math.exp(-dt * 2.6));
+        place();
+        shadowDirty = true;
+      }
       if (!shadowsOn) return;
       shadowAcc += dt;
-      if (shadowDirty || shadowAcc >= 1 / (busy ? shadowBusyHz : shadowHz) - 0.002) refresh();
+      if (shadowDirty || shadowAcc >= 1 / (busy || swinging ? shadowBusyHz : shadowHz) - 0.002) refresh();
     },
     invalidateShadows() { shadowDirty = true; renderer.shadowMap.needsUpdate = true; },
     setShadowSize(px) {

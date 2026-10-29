@@ -1,7 +1,7 @@
 import {
-  BloomEffect, EffectComposer, EffectPass, KernelSize, RenderPass, SMAAEffect, SMAAPreset, ToneMappingEffect, ToneMappingMode,
+  BlendFunction, BloomEffect, Effect, EffectComposer, EffectPass, KernelSize, RenderPass, SMAAEffect, SMAAPreset, ToneMappingEffect, ToneMappingMode,
 } from 'postprocessing';
-import { ACESFilmicToneMapping, AgXToneMapping, ShaderChunk, HalfFloatType, NeutralToneMapping, NoToneMapping, UnsignedByteType, type ToneMapping } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, ShaderChunk, HalfFloatType, NeutralToneMapping, NoToneMapping, UnsignedByteType, Uniform, type ToneMapping } from 'three';
 import { GRAPHICS_PRESETS, type CreatePost, type GraphicsSettings, type PostPipeline } from '../contracts';
 import { registerBloomPulse } from '../fx/bloomBus';
 
@@ -40,7 +40,26 @@ export function createVignette(parent: HTMLElement, before?: Element | null): { 
   return { el, setStrength: set };
 }
 
-export const createPost: CreatePost = (renderer, scene, camera, tier) => {
+/** Linear-light colour grade placed right before the tone mapper (same EffectPass, so it costs a few ALU ops, not a pass). */
+class SaturationEffect extends Effect {
+  constructor() {
+    super('SaturationEffect', `uniform float saturation;
+      void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+        float l = dot(inputColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        outputColor = vec4(max(mix(vec3(l), inputColor.rgb, saturation), 0.0), inputColor.a);
+      }`, { blendFunction: BlendFunction.SRC, uniforms: new Map([['saturation', new Uniform(1)]]) });
+  }
+  set saturation(v: number) { (this.uniforms.get('saturation') as Uniform<number>).value = v; }
+}
+
+export interface PostPipelineImpl extends PostPipeline {
+  /** Colour grade for the contrast presets. Returns false when the pipeline renders straight to the canvas (Low), where the caller falls back to a CSS filter. */
+  setSaturation(v: number): boolean;
+  /** True while the EffectComposer is rendering (bloom / SMAA on). */
+  readonly composerActive: boolean;
+}
+
+export const createPost = ((renderer, scene, camera, tier): PostPipelineImpl => {
   const gl = renderer.getContext();
   const isGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
   const ext = renderer.extensions;
@@ -57,9 +76,11 @@ export const createPost: CreatePost = (renderer, scene, camera, tier) => {
   let gfx: GraphicsSettings = { ...GRAPHICS_PRESETS[tier] };
   let built = { bloom: false, aa: false, lite: false };
   let pulse = { s: 0, d: 0, t: 0 };
+  let saturation = 1;
+  let sat: SaturationEffect | null = null;
   const bloomBase = () => (gfx.preset === 'low' ? 0.7 : gfx.preset === 'medium' ? 0.75 : 0.85);
 
-  const dispose = () => { try { composer?.dispose(); } catch { /* ignore */ } composer = null; bloom = null; };
+  const dispose = () => { try { composer?.dispose(); } catch { /* ignore */ } composer = null; bloom = null; sat = null; };
   const goDirect = () => { renderer.setRenderTarget(null); renderer.toneMapping = directTone; };
 
   const wantsComposer = () => gfx.bloom || gfx.antialias;
@@ -81,7 +102,9 @@ export const createPost: CreatePost = (renderer, scene, camera, tier) => {
       b.resolution.scale = lite ? 0.5 : 1;
       effects.push(b);
     }
-    effects.push(new ToneMappingEffect({ mode: tmMode }));
+    sat = new SaturationEffect();
+    sat.saturation = saturation;
+    effects.push(sat, new ToneMappingEffect({ mode: tmMode }));
     c.addPass(new EffectPass(camera, ...effects));
     if (gfx.antialias) c.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset.MEDIUM })));
     composer = c; bloom = b;
@@ -126,5 +149,7 @@ export const createPost: CreatePost = (renderer, scene, camera, tier) => {
     setQuality(t) { gfx = { ...GRAPHICS_PRESETS[t] }; apply(); },
     setGraphics(g) { gfx = { ...g }; apply(); },
     bloomPulse: pulseFn,
-  } satisfies PostPipeline;
-};
+    setSaturation(v) { saturation = v; if (sat) sat.saturation = v; return !!composer; },
+    get composerActive() { return !!composer; },
+  };
+}) satisfies CreatePost;

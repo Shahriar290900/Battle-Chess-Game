@@ -4,6 +4,7 @@ import type { FxApi, GraphicsSettings, KinematicsApi, PostPipeline, QualityTier,
 import type { BoardImpl } from './board';
 import type { Lighting } from './lighting';
 import type { RenderKit } from './scene';
+import type { Look } from './look';
 
 export interface GraphicsDeps {
   settings: SettingsStore;
@@ -17,6 +18,8 @@ export interface GraphicsDeps {
   tier: () => QualityTier;
   /** Dynamic-resolution factor from the quality manager (1 = off). */
   dynScale?: () => number;
+  /** Readability look: re-applied after every graphics change (the pipeline may have been rebuilt, the edge depends on the tier). */
+  look?: () => Look | undefined;
 }
 
 export function applyGraphics(d: GraphicsDeps, g: GraphicsSettings = d.settings.get().graphics): void {
@@ -27,6 +30,7 @@ export function applyGraphics(d: GraphicsDeps, g: GraphicsSettings = d.settings.
   d.fx.setGraphics?.(g);
   d.kinematics.setEnabled(g.secondaryMotion);
   d.post.setSize(d.kit.width, d.kit.height);
+  d.look?.()?.refresh();
 }
 
 /** Small FPS readout in the corner; updates twice a second and costs nothing while hidden. */
