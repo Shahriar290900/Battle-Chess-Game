@@ -204,7 +204,7 @@ class Animator:
         dy = 0.0
         for gname in self._reach_goals:
             g = next(x for x in self.goals if x.name == gname)
-            if self._w(g.weight, t) < 0.5 or any(s != "world" for s, _ in g.spaces):
+            if self._w(g.weight, t) < 0.5 or any(s != "world" and self._w(w_, t) > 1e-3 for s, w_ in g.spaces):
                 continue
             tgt, _ = self._target(g, t, ctx)
             if tgt is None:
