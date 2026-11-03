@@ -214,6 +214,15 @@ try {
     await page.click('.menu .btn:has-text("Credits")');
     await page.waitForTimeout(200);
     await page.screenshot({ path: join(shots, `medium-credits-${vp.name}.png`) });
+    await page.click('.lic-link'); // Credits -> Licences (Stockfish GPL, CC0 audio, OFL fonts)
+    await page.waitForSelector('.page[aria-label="Licences"]:not([hidden])');
+    await page.screenshot({ path: join(shots, `medium-licences-${vp.name}.png`) });
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.click('.menu .btn:has-text("Settings")');
+    await page.click('.settings .cats .btn:has-text("Controls")');
+    await page.waitForSelector('.ctl-table');
+    await page.screenshot({ path: join(shots, `medium-controls-${vp.name}.png`) });
     await page.keyboard.press('Escape');
     await page.click('.menu .btn:has-text("Two Players")');
     await page.click('.flow .card:has-text("Turn the Board")');

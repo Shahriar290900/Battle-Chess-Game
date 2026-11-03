@@ -46,7 +46,7 @@ export function createHud(controller: GameController, settings: SettingsStore, h
   const undoBtn = iconButton(ICON.undo, 'Undo', handlers.onUndo, '', 'Undo|Take back your last move (and the computer\'s reply).', 'U');
   const skipBtn = iconButton(ICON.skip, 'Skip animation', handlers.onSkip, '', 'Skip|Jump to the end of the current animation.', 'Space');
   skipBtn.hidden = true;
-  const journalBtn = iconButton(ICON.list, 'Move list', () => settings.set('showMoveList', !settings.get().showMoveList), '', 'Move list|Show or hide the journal of moves.', 'J');
+  const journalBtn = iconButton(ICON.list, 'Move list', () => settings.set('showMoveList', !settings.get().showMoveList), '', 'Move list|Show or hide the journal of moves.', 'M');
   // Free-look camera (see ui/boardInput.ts): the buttons only post window events, the board input owns the camera commands.
   const camCmd = (cmd: 'recenter' | 'fallen') => () => window.dispatchEvent(new CustomEvent('bc:camera', { detail: cmd }));
   const recenterBtn = iconButton(CAM_ICON.recenter, 'Recenter camera', camCmd('recenter'), '', 'Recenter|Ease the camera back to your seat. Drag empty space or use two fingers to look around; wheel or pinch to zoom.', 'R');

@@ -97,6 +97,11 @@ export function createPromotionPicker(): PromotionPicker {
   let open = false;
   let resolve: ((r: PromotionRole | null) => void) | null = null;
   const done = (r: PromotionRole | null) => { const f = resolve; resolve = null; api.close(); f?.(r); };
+  window.addEventListener('keydown', (e) => {
+    if (!open || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const i = '1234'.indexOf(e.key);
+    if (i >= 0 && e.key.length === 1) { e.preventDefault(); done(PROMO_ROLES[i]); }
+  });
   const api: PromotionPicker = {
     el,
     get isOpen() { return open; },
@@ -106,9 +111,9 @@ export function createPromotionPicker(): PromotionPicker {
       clear(cards);
       PROMO_ROLES.forEach((r, i) => {
         const b = h('button', { class: `card fr lv${i}`, type: 'button', role: 'listitem', 'data-nav': '', 'data-faction': faction, 'aria-label': ROLE_LABEL[r] },
-          h('div', { class: 'art' }, pieceIcon(r, faction, 'big')), h('div', { class: 'meta' }, h('h3', { class: 'nm', text: ROLE_LABEL[r] })));
+          h('div', { class: 'art' }, pieceIcon(r, faction, 'big')), h('div', { class: 'meta' }, h('h3', { class: 'nm', text: ROLE_LABEL[r] }), h('i', { class: 'kbd kbd-only', text: String(i + 1) })));
         b.addEventListener('click', () => done(r));
-        tipOn(b, PROMO_TIP[r]);
+        tipOn(b, PROMO_TIP[r], String(i + 1));
         if (i === 0) b.setAttribute('data-autofocus', '');
         cards.append(b);
       });

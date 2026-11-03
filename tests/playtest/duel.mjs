@@ -433,8 +433,10 @@ async function duelPhase() {
       await sleep(3400); // arm timer is 3 s: label must reset
       const lbl = await page.locator('.pause .btn.danger .lbl').first().textContent().catch(() => '');
       if (/confirm/i.test(lbl ?? '')) await rec.anomaly('resign-arm-not-reset', 'Resign stayed armed after 3 s', { severity: 'warn' });
-      await D.uiClick('.pause .btn:has-text("Resign")', 'pause:resign (arm again)');
-      await D.uiClick('.pause .btn:has-text("Confirm resign")', 'pause:resign (confirm)');
+      // hot-seat: Resign asks "Which side resigns?" (ui-polish), then a Confirm
+      await D.uiClick('.pause .btn:has-text("Resign")', 'pause:resign (open)');
+      await D.uiClick('.pause .btn:has-text("Rime Host")', 'pause:resign (side)');
+      await D.uiClick('.pause .btn:has-text("Confirm")', 'pause:resign (confirm)');
       await gameOverCheck('duel-resign', { expectTitle: 'Resignation', dismiss: 'View Board' });
     }
   }
@@ -544,8 +546,9 @@ async function scenarioPhase() {
   await D.humanMove('e2', 'e4', { via: 'click' });
   await D.humanMove('e7', 'e5', { via: 'click' });
   if (await togglePause('resign-flow')) {
-    await D.uiClick('.pause .btn:has-text("Resign")', 'pause:resign-arm');
-    await D.uiClick('.pause .btn:has-text("Confirm resign")', 'pause:resign-confirm');
+    await D.uiClick('.pause .btn:has-text("Resign")', 'pause:resign-open');
+    await D.uiClick('.pause .btn:has-text("Rime Host")', 'pause:resign-side'); // hot-seat: choose the side, then confirm
+    await D.uiClick('.pause .btn:has-text("Confirm")', 'pause:resign-confirm');
   }
   await gameOverCheck('resign-flow', { expectTitle: 'Resignation', dismiss: 'Rematch' });
   const rm = await D.waitFor((x) => x.state === 'awaitInput' && x.plies === 0 && !x.result, 25000);

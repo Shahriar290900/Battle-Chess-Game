@@ -253,9 +253,10 @@ export class GameController {
     return true;
   }
 
-  async resign(): Promise<void> {
+  /** In hot-seat the UI asks which side concedes; otherwise the human (vs-AI) or the side to move resigns. */
+  async resign(side?: Side): Promise<void> {
     if (!this.mode || this._state === 'gameOver' || this._state === 'menu') return;
-    const loser: Side = this.mode.kind === 'vs-ai' ? this.mode.playerSide : this.rules.turn();
+    const loser: Side = this.mode.kind === 'vs-ai' ? this.mode.playerSide : side ?? this.rules.turn();
     await this.interrupt();
     this.finish({ result: loser === 'w' ? '0-1' : '1-0', reason: 'resign' });
   }

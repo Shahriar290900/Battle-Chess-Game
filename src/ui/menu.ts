@@ -1,5 +1,5 @@
 // Main menu (over the live attract-mode board) and the in-game pause overlay.
-import type { SettingsStore } from '../contracts';
+import type { SettingsStore, Side } from '../contracts';
 import type { GameController } from '../core/game';
 import type { RatingStore } from '../core/rating';
 import { PROVISIONAL_GAMES } from '../core/rating';
@@ -7,6 +7,8 @@ import { h, clear } from './dom';
 import { button, setLabel, tipOn } from './controls';
 import type { Screen } from './screen';
 import { isCoarse } from './screen';
+import { sideName } from './glyphs';
+import { focusFirst } from './nav';
 
 export interface MenuHandlers {
   resume(): void;
@@ -16,7 +18,8 @@ export interface MenuHandlers {
   library(): void;
   settings(): void;
   credits(): void;
-  resign(): void;
+  resign(side?: Side): void;
+  controls(): void;
   mainMenu(): void;
   learnAvailable(): boolean;
   beginLesson(): void;
@@ -34,6 +37,32 @@ function confirmButton(label: string, confirmLabel: string, run: () => void, tip
   }, { cls: 'danger', tip });
   b.addEventListener('blur', () => { clearTimeout(timer); b.classList.remove('armed'); setLabel(b, label); });
   return b;
+}
+
+
+/** Resign: one confirm button vs the computer; in hot-seat first ask "Which side resigns?" and confirm that side. */
+function resignControl(controller: GameController, hd: MenuHandlers, tip: string): HTMLElement {
+  if (controller.gameMode?.kind !== 'hotseat') return confirmButton('Resign', 'Confirm resign', () => hd.resign(), tip);
+  const box = h('div', { class: 'resign-box' });
+  const show = (step: 'idle' | 'pick' | Side) => {
+    clear(box);
+    if (step === 'idle') box.append(button('Resign', () => show('pick'), { cls: 'danger', tip: 'Resign|Concede the game. You will choose which side resigns.' }));
+    else if (step === 'pick') {
+      box.append(h('p', { class: 'resign-q', role: 'status', text: 'Which side resigns?' }),
+        h('div', { class: 'resign-sides' },
+          button('Emberhold', () => show('w'), { cls: 'small', tip: 'Emberhold resigns|White concedes. Rime Host wins.' }),
+          button('Rime Host', () => show('b'), { cls: 'small', tip: 'Rime Host resigns|Black concedes. Emberhold wins.' })),
+        button('Cancel', () => show('idle'), { cls: 'small', tip: 'Cancel|Keep playing.' }));
+    } else {
+      box.append(h('p', { class: 'resign-q', role: 'status', text: `${sideName(step)} resigns?` }),
+        h('div', { class: 'resign-sides' },
+          button('Confirm', () => { show('idle'); hd.resign(step); }, { cls: 'small danger armed', tip: `Confirm|${sideName(step)} concedes the game.` }),
+          button('Back', () => show('pick'), { cls: 'small', tip: 'Back|Choose the side again.' })));
+    }
+    if (step !== 'idle') focusFirst(box);
+  };
+  show('idle');
+  return box;
 }
 
 export function createMainMenu(controller: GameController, settings: SettingsStore, hd: MenuHandlers, rating: RatingStore): Screen {
@@ -69,8 +98,8 @@ export function createMainMenu(controller: GameController, settings: SettingsSto
     if (hd.learnAvailable()) list.append(button('Piece Library', hd.library, { tip: 'Piece Library|Turn each piece in 3D and watch how it moves and fights.' }));
     list.append(
       button('Settings', hd.settings, { tip: 'Settings|Graphics, audio, gameplay and controls.' }),
-      button('Credits', hd.credits, { tip: 'Credits|Who made this and what it is built with.' }));
-    if (running && !s.result) list.append(confirmButton('Resign', 'Confirm resign', hd.resign, 'Resign|Concede the game. Tap twice to confirm.'));
+      button('Credits', hd.credits, { tip: 'Credits|Who made the game.' }));
+    if (running && !s.result) list.append(resignControl(controller, hd, 'Resign|Concede the game. Tap twice to confirm.'));
     list.firstElementChild?.setAttribute('data-autofocus', '');
     const showNote = !settings.get().tutorialSeen && hd.learnAvailable() && !running;
     note.hidden = !showNote;
@@ -78,8 +107,8 @@ export function createMainMenu(controller: GameController, settings: SettingsSto
     if (showNote) {
       note.append(h('p', { text: 'New to the field? A short lesson teaches you the pieces.' }),
         h('div', { class: 'acts' },
-          button('Start', () => { settings.set('tutorialSeen', true); hd.beginLesson(); }, { cls: 'small' }),
-          button('Later', () => { settings.set('tutorialSeen', true); }, { cls: 'small' })));
+          button('Start', () => { settings.set('tutorialSeen', true); hd.beginLesson(); }, { cls: 'small', tip: 'Start the lesson|A short guided tour of the pieces on the real board.' }),
+          button('Later', () => { settings.set('tutorialSeen', true); }, { cls: 'small', tip: 'Later|Skip for now. You can replay it from Settings, General.' })));
     }
   }
   settings.subscribe((_, k) => { if (k === 'tutorialSeen' && !el.hidden) build(); });
@@ -102,8 +131,9 @@ export function createPause(controller: GameController, hd: MenuHandlers): Scree
     list.append(
       button('Resume', hd.resume, { cls: 'sel', tip: 'Resume|Back to the board.', tipKey: 'Esc' }),
       button('Settings', hd.settings, { tip: 'Settings|Graphics, audio and gameplay options.' }),
-      button('How to Play', hd.howTo, { tip: 'How to Play|A quick refresher on the rules and controls.' }));
-    if (!s.result) list.append(confirmButton('Resign', 'Confirm resign', hd.resign, 'Resign|Concede the game. Press twice to confirm.'));
+      button('Controls', hd.controls, { tip: 'Controls|Mouse, touch, keyboard and camera reference.' }),
+      button('How to Play', hd.howTo, { tip: 'How to Play|A quick refresher on the rules.' }));
+    if (!s.result) list.append(resignControl(controller, hd, 'Resign|Concede the game. Press twice to confirm.'));
     list.append(button('Main Menu', hd.mainMenu, { tip: 'Main Menu|Leave to the title screen. Your game stays available under Continue.' }));
     list.firstElementChild?.setAttribute('data-autofocus', '');
   }

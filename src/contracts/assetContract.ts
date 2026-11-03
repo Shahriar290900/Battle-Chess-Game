@@ -103,4 +103,5 @@ export const GRAVEYARD_PIECE_SCALE = 0.55;
 export const CREDITS = {
   developer: 'M Al Shahriar Hameem',
   email: 'shahriar.hameem@gmail.com',
+  github: 'github.com/Shahriar290900',
 } as const;

@@ -1,9 +1,11 @@
 // UI composition: screen stack (menu, pause, new-game flow, settings, pages), HUD, game over, promotion, input
 // routing (Esc / Android back / shortcuts) and keyboard + gamepad navigation.
-import type { AudioBus, EventBus, GameModeConfig, SettingsStore } from '../contracts';
+import type { AudioBus, EventBus, GameModeConfig, Settings, SettingsStore } from '../contracts';
 import type { GameController } from '../core/game';
 import { attachRatingTracker, createRatingStore, type RatingStore } from '../core/rating';
-import { createCredits, createHowTo } from './pages';
+import { createCredits, createHowTo, createLicences } from './pages';
+import { createControlsScreen, createFirstGameCard } from './controlsPage';
+import { typing } from './keys';
 import { createFlow } from './flow';
 import { createGameOverPanel, type GameOverPanel, type PromotionPicker } from './endgame';
 import { createHud, type Hud } from './hud';
@@ -86,7 +88,9 @@ export function createUi(d: UiDeps): Ui {
     start: (c) => { clearAll(); gameOver.close(); d.onStart(c); },
     exit: () => pop(),
   });
-  const credits = createCredits(d.audio, () => pop());
+  const licences = createLicences(() => pop());
+  const credits = createCredits(d.audio, () => pop(), () => push(licences));
+  const controlsScreen = createControlsScreen(() => pop());
   const howTo = createHowTo(() => pop());
   const settingsScreen = createSettings({
     settings, audio: d.audio, learnAvailable,
@@ -102,7 +106,12 @@ export function createUi(d: UiDeps): Ui {
     library: () => openLearn('library'),
     settings: () => push(settingsScreen),
     credits: () => push(credits),
-    resign: () => { clearAll(); void controller.resign(); },
+    resign: (side) => {
+      clearAll();
+      // Hot-seat asks which side resigns; the controller takes an optional side (otherwise the side to move resigns).
+      void controller.resign(side);
+    },
+    controls: () => push(controlsScreen),
     mainMenu: () => only(menu),
     learnAvailable,
     beginLesson: () => openLearn('tutorial'),
@@ -116,14 +125,16 @@ export function createUi(d: UiDeps): Ui {
     onUndo: () => { void controller.undo(); gameOver.close(); },
     onSkip: () => controller.skip(),
   });
+  const firstCard = createFirstGameCard(() => { if (!top()) push(controlsScreen); });
   const gameOver = createGameOverPanel({
     onRematch: () => { const m = controller.gameMode; if (m) d.onStart({ ...m, aiElo: controller.ratedElo ?? undefined }); },
     onMenu: () => only(menu),
     onToggle: (o) => hud.setSuspended(o || stack.length > 0),
   });
 
-  const screens = [menu, pause, flow, settingsScreen, credits, howTo];
+  const screens = [menu, pause, flow, settingsScreen, credits, licences, controlsScreen, howTo];
   for (const s of screens) s.el.hidden = true;
+  hud.el.append(firstCard.el);
   d.root.append(hud.el, ...screens.map((s) => s.el), promotion.el, gameOver.el);
   d.root.append(loading.el); // the loading screen stays on top
   installTooltips(d.root);
@@ -134,7 +145,8 @@ export function createUi(d: UiDeps): Ui {
     clearTimeout(overlayTimer);
     overlayTimer = window.setTimeout(() => { if (controller.snapshot().result && !top()) gameOver.show(end, controller.gameMode, ratingTracker.last(), rating); }, 250);
   });
-  d.bus.on('game:start', () => { clearTimeout(overlayTimer); gameOver.close(); });
+  d.bus.on('game:start', () => { clearTimeout(overlayTimer); gameOver.close(); window.setTimeout(() => { if (running() && !top()) firstCard.show(); }, 1200); });
+  d.bus.on('move:resolved', () => firstCard.dismiss());
 
   const ui: Ui = {
     loading, hud, promotion, gameOver, rating,
@@ -154,15 +166,22 @@ export function createUi(d: UiDeps): Ui {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (ui.handleBack()) e.preventDefault(); return; }
-    if (ui.modalOpen || e.ctrlKey || e.metaKey || e.altKey || !running()) return;
+    if (ui.modalOpen || e.ctrlKey || e.metaKey || e.altKey || !running() || typing()) return;
     const a = document.activeElement;
-    if (a && a !== document.body && (a as HTMLElement).closest?.('input,select,textarea')) return;
     const k = e.key.toLowerCase();
     const s = controller.snapshot();
     if (k === 'u') { if (s.canUndo) { void controller.undo(); gameOver.close(); e.preventDefault(); } }
-    else if (k === 'j') { hud.toggleJournal(); e.preventDefault(); }
+    else if (k === 'm' || k === 'j') { hud.toggleJournal(); e.preventDefault(); } // J stays as a legacy alias
+    else if (k === 'f' && !e.repeat) { toggleFreeLook(); e.preventDefault(); }
     else if ((e.key === ' ' || e.key === 'Enter') && s.busy && (!a || a === document.body || a.tagName === 'CANVAS')) { controller.skip(); e.preventDefault(); }
   });
+  // F: free orbit camera on/off (remembers the mode it came from)
+  let modeBeforeFree: Settings['cameraMode'] = 'follow';
+  function toggleFreeLook() {
+    const cur = settings.get().cameraMode;
+    if (cur === 'free') settings.set('cameraMode', modeBeforeFree === 'free' ? 'follow' : modeBeforeFree);
+    else { modeBeforeFree = cur; settings.set('cameraMode', 'free'); }
+  }
   installNav({
     active: () => (promotion.isOpen ? promotion.el : top()?.el ?? (gameOver.isOpen ? gameOver.el : null)),
     back: () => ui.handleBack(),

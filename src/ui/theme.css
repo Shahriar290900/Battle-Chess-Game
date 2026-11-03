@@ -201,11 +201,6 @@ a:focus-visible { outline: 1px solid var(--ui-text); outline-offset: 3px; }
 .val { min-width: 6.6rem; max-width: 10rem; padding: 0 0.3rem; text-align: center; font-size: 1.1rem; color: #f4ecd8; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.action { padding-block: 0.4rem; }
 .reset-wrap { display: flex; justify-content: center; padding: 1.4rem 0 0.4rem; }
-.ctl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1.4rem 1.8rem; padding: 0.4rem 0.8rem; }
-.ctl-grid h3 { margin: 0 0 0.5rem; font: 400 1.05rem var(--ui-font-display); letter-spacing: 0.2em; text-transform: uppercase; color: #f1e9d6; }
-.ctl-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; font-size: 1rem; color: var(--ui-text-dim); }
-.ctl-grid li { display: flex; gap: 0.6rem; align-items: baseline; }
-.ctl-grid li b { font-weight: 500; color: var(--ui-text); min-width: 4.5rem; flex: none; }
 .preview { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0.8rem 0.8rem; font-size: 0.95rem; font-style: italic; color: var(--ui-text-faint); }
 .preview .tile { flex: none; width: 3rem; height: 3rem; background: #2b2723; position: relative; overflow: hidden; }
 .preview .tile i { position: absolute; inset: 0; }
@@ -222,6 +217,15 @@ a:focus-visible { outline: 1px solid var(--ui-text); outline-offset: 3px; }
 .page .sheet h3 { margin: 0 0 0.35rem; font: 400 1.05rem var(--ui-font-display); letter-spacing: 0.2em; text-transform: uppercase; color: #f1e9d6; }
 .page .sheet p { margin: 0; font-size: 1.12rem; line-height: 1.5; color: var(--ui-text-dim); overflow-wrap: anywhere; }
 .page .sheet .dev { font: italic 400 1.5rem/1.3 var(--ui-font-script); color: var(--ui-text); }
+.page .sheet .blk { display: flex; align-items: center; justify-content: center; min-height: 2.6rem; margin-top: 0.2rem; }
+.page .sheet .cr-game { font: 400 1.6rem/1.3 var(--ui-font-display); letter-spacing: 0.1em; color: #f4ecd8; margin: 0; }
+.page .sheet .cr-by { font: italic 400 1.05rem var(--ui-font-script); color: var(--ui-text-faint); margin: 0; }
+.page .sheet .cr-links { margin-top: 0.8rem; display: grid; justify-items: center; }
+.page .sheet .cr-links a { display: flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: 0 0.8rem; font-size: 1.15rem; }
+.lic-row { margin-top: 0.4rem; text-align: center; }
+.lic-link { min-height: 2.2rem; padding: 0 0.9rem; border: 0; background: none; color: var(--ui-text-faint); font: 400 0.85rem var(--ui-font-display); letter-spacing: 0.18em; text-transform: uppercase; text-decoration: underline; text-decoration-color: #3a362f; text-underline-offset: 0.25em; }
+.lic-link:focus-visible, .lic-link:active { color: #fff; }
+@media (hover: hover) { .lic-link:hover { color: var(--ui-text); } }
 .page .sheet .ornament { width: 8rem; height: 1px; margin: 0 auto 1.5rem; background: linear-gradient(90deg, transparent, #8a8372, transparent); }
 
 /* ---------- game over + promotion */
@@ -410,3 +414,78 @@ a:focus-visible { outline: 1px solid var(--ui-text); outline-offset: 3px; }
   .cards.seven .card .elo { font-size: 1.5rem; } .cards.seven .card .nm { font-size: 1.1rem; }
   .fine { gap: 0.2rem; } .fine .fine-note { font-size: 0.9rem; }
 }
+
+/* ---------- Controls tables (Settings -> Controls, Pause -> Controls) */
+.ctl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.4rem 2rem; padding: 0.4rem 0.8rem 1rem; text-align: left; }
+.ctl-sec h3 { margin: 0 0 0.45rem; font: 400 1.05rem var(--ui-font-display); letter-spacing: 0.2em; text-transform: uppercase; color: #f1e9d6; }
+.ctl-table { width: 100%; border-collapse: collapse; font-size: 0.98rem; color: var(--ui-text-dim); }
+.ctl-table thead th { padding: 0 0.5rem 0.3rem 0; font: 400 0.72rem var(--ui-font-display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ui-text-faint); text-align: left; border-bottom: 1px solid #2c2923; }
+.ctl-table tbody th { width: 1%; padding: 0.3rem 0.8rem 0.3rem 0; text-align: left; white-space: nowrap; vertical-align: top; font-weight: 400; }
+.ctl-table td { padding: 0.3rem 0; vertical-align: top; border-bottom: 1px solid rgba(232, 224, 205, 0.06); }
+.ctl-table .kbd { color: var(--ui-text); }
+.controls-page .sheet { width: min(60rem, 94%); text-align: left; }
+.settings .ctl-grid { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+
+/* ---------- first-game card (non-blocking) + hot-seat resign chooser */
+.first-card { position: absolute; left: calc(var(--sal) + 0.8rem); bottom: calc(var(--sab) + 0.8rem); z-index: 12; width: min(17rem, 48vw); padding: 0.8rem 0.9rem 0.7rem; background: rgba(5, 5, 7, 0.92); }
+.first-card .fc-title { margin: 0 0 0.45rem; font: 400 0.9rem var(--ui-font-display); letter-spacing: 0.16em; text-transform: uppercase; color: #f1e9d6; }
+.first-card ul { list-style: none; margin: 0 0 0.6rem; padding: 0; display: grid; gap: 0.25rem; font-size: 0.95rem; color: var(--ui-text-dim); }
+.first-card li { display: flex; gap: 0.55rem; align-items: center; }
+.first-card .kbd { flex: none; min-width: 1.9rem; color: var(--ui-text); }
+.first-card .acts { display: flex; gap: 0.5rem; }
+.first-card .acts .btn { flex: 1; padding-inline: 0.4rem; letter-spacing: 0.08em; }
+.resign-box { grid-column: 1 / -1; display: grid; gap: 0.5rem; }
+.resign-box .resign-q { margin: 0; text-align: center; font: italic 400 1.1rem var(--ui-font-script); color: var(--ui-text); }
+.resign-box .resign-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.card .kbd { margin-top: 0.3rem; }
+
+/* ---------- settings: the Esc/Back hint lives in the side column / title bar (never over the scrolling rows); tab bar overflow hint */
+.settings .side .hint-back { display: none; }
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  .settings .side .hint-back { display: flex; position: static; margin: auto 0 0; align-self: center; }
+  .settings .cats .back-cat, .settings .cats .spacer { display: none; }
+}
+.settings .rows { padding-bottom: 0.6rem; }
+.cats-wrap { position: relative; width: min(15.5rem, 100%); }
+.cats-wrap .cats { width: 100%; }
+.cats-wrap::before, .cats-wrap::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2.2rem; pointer-events: none; z-index: 4; opacity: 0; transition: opacity 0.12s linear; display: none; }
+.cats-wrap::before { left: 0; background: linear-gradient(90deg, #060607 20%, transparent); }
+.cats-wrap::after { right: 0; background: linear-gradient(270deg, #060607 20%, transparent); content: "\203A"; display: none; }
+@media (max-aspect-ratio: 1/1) {
+  .cats-wrap { width: 100%; }
+  .cats-wrap::before, .cats-wrap::after { display: flex; align-items: center; font: 400 1.8rem/1 var(--ui-font-display); color: var(--ui-text); }
+  .cats-wrap::before { content: "\2039"; justify-content: flex-start; padding-left: 0.3rem; }
+  .cats-wrap::after { justify-content: flex-end; padding-right: 0.3rem; }
+  .cats-wrap.more-l::before, .cats-wrap.more-r::after { opacity: 1; }
+  .settings .rows { padding-bottom: 0.6rem; }
+  .settings .side { position: relative; }
+  .settings .side .ttl { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+  .settings .side .hint-back { display: flex; position: absolute; top: calc(var(--sat) + 0.5rem); right: 0.4rem; bottom: auto; margin: 0; }
+}
+
+/* ---------- touch targets: at least 44 px on touch devices and phone-sized viewports, every orientation */
+@media (pointer: coarse), (max-width: 600px), (max-height: 520px) {
+  .btn, .settings .cats .btn { min-height: 44px; }
+  .btn.small { min-height: 44px; }
+  .tools .ibtn, .ibtn { width: 44px; height: 44px; }
+  .hint-back { min-width: 44px; min-height: 44px; }
+  .arr { min-width: 44px; min-height: 44px; }
+  .row { min-height: 44px; }
+  .lic-link { min-height: 44px; }
+  .page .sheet .cr-links a, .page .sheet .blk { min-height: 44px; }
+  .tools { gap: 0.4rem; }
+}
+@media (pointer: coarse), (max-width: 600px), (max-height: 520px) { .val { min-height: 44px; line-height: 44px; } }
+@media (max-aspect-ratio: 1/1) {
+  .first-card { left: 50%; transform: translateX(-50%); bottom: calc(var(--sab) + 8.4rem); width: min(92vw, 22rem); padding: 0.6rem 0.8rem; }
+  .first-card li:nth-child(n+2) { display: none; }
+  .first-card .fc-title { margin-bottom: 0.3rem; }
+}
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  .first-card { width: min(15rem, 40vw); padding: 0.5rem 0.7rem; }
+  .first-card li:nth-child(n+4) { display: none; }
+}
+.page .sheet .cr-game { text-wrap: balance; }
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) { .pause .col { width: min(34rem, 88vw); } .pause .menu-list .btn { letter-spacing: 0.1em; padding-inline: 0.5rem; } }
+@media (min-aspect-ratio: 1/1) and (pointer: coarse) { .journal { top: calc(var(--sat) + 0.8rem + 52px); } }
+@media (min-aspect-ratio: 1/1) and (max-height: 520px) { .journal { top: calc(var(--sat) + 0.8rem + 52px); } }

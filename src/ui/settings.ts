@@ -1,11 +1,15 @@
 // Settings in the reference layout: a dark category column (General / Video / Audio / Gameplay / Controls / Back) and
 // a right panel of `label  << < value > >>` rows. Everything works with mouse, touch and keyboard (arrows change the
 // focused row, Q/E switch category). Every row carries a tooltip explaining the option and its performance cost.
-import type { AudioBus, GraphicsSettings, HighlightStyle, QualityTier, Settings, SettingsStore } from '../contracts';
+import type { AudioBus, ContrastMode, GraphicsSettings, HighlightStyle, QualityTier, Settings, SettingsStore } from '../contracts';
+import type { AudioBusExt, AudioCategory } from '../audio';
+import { getCategoryVolume, setCategoryVolume } from '../audio/categories';
 import { AI_ELO_MAX, AI_ELO_MIN, DEFAULT_SETTINGS } from '../contracts';
 import { tierForElo } from '../core/ai/strength';
 import { AI_ELO_STEP, choosePreset, patchGraphics } from '../core/settings';
 import { h } from './dom';
+import { createControlsPanel } from './controlsPage';
+import { KEY, typing } from './keys';
 import { actionRow, backHint, button, optionRow, rangeRow, toggleRow, type Row } from './controls';
 import type { Screen } from './screen';
 import { setTooltipsEnabled, tooltipsEnabled } from './tooltip';
@@ -20,12 +24,16 @@ export interface SettingsDeps {
 
 type Cat = 'general' | 'video' | 'audio' | 'gameplay' | 'controls';
 const CATS: Array<{ id: Cat; label: string; tip: string }> = [
-  { id: 'general', label: 'General', tip: 'General|Hints, tooltips and the intro lesson.' },
+  { id: 'general', label: 'General', tip: 'General|Theme, hints, tooltips and the intro lesson.' },
   { id: 'video', label: 'Video', tip: 'Video|Quality presets and performance options.' },
-  { id: 'audio', label: 'Audio', tip: 'Audio|Music and sound-effect volume.' },
+  { id: 'audio', label: 'Audio', tip: 'Audio|Music, effects, ambience and interface volume.' },
   { id: 'gameplay', label: 'Gameplay', tip: 'Gameplay|Animations, camera, highlights and the computer.' },
   { id: 'controls', label: 'Controls', tip: 'Controls|How to play with mouse, touch and keyboard.' },
 ];
+
+/** Board themes the stepper offers (data-driven: add an entry when a theme ships; `themeId` stores the id). */
+const THEME_OPTIONS: Array<{ value: string; label: string }> = [{ value: 'forge-frost', label: 'Forge & Frost' }];
+const CONTRAST_OPTIONS: Array<{ value: ContrastMode; label: string }> = [{ value: 'soft', label: 'Soft' }, { value: 'standard', label: 'Standard' }, { value: 'vivid', label: 'Vivid' }];
 
 const HL_TEXT: Record<HighlightStyle, string> = {
   glow: 'A soft pool of light on the tile.',
@@ -58,6 +66,8 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
   };
 
   // ---- General
+  add('general', optionRow('Theme', THEME_OPTIONS, () => S.get().themeId, set('themeId'), undefined,
+    'Theme|The look of the board and hall. Forge & Frost is the only theme for now; more can be added later.'));
   add('general', toggleRow('Show tooltips', tooltipsEnabled, setTooltipsEnabled, undefined, 'Show tooltips|Small help panels on hover, focus or long-press. No performance cost.'));
   add('general', toggleRow('Offer the intro lesson', () => !S.get().tutorialSeen, (v) => S.set('tutorialSeen', !v), 'On the main menu', 'Intro lesson prompt|Shows the "New to the field?" note on the main menu.'));
   if (d.learnAvailable()) add('general', actionRow('Replay the intro lesson', 'Begin', d.replayLesson, { tip: 'Intro lesson|A short guided tour of the pieces on the real board.' }));
@@ -68,6 +78,8 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     { value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'custom', label: 'Custom' },
   ], presetValue, (v) => (v === 'custom' ? patchGraphics(S, { preset: 'custom' }) : choosePreset(S, v)), undefined,
   'Quality preset|Auto picks for your device. Low suits phones and older laptops, High needs a dedicated GPU. Changing any option below makes it Custom.'));
+  add('video', optionRow('Contrast', CONTRAST_OPTIONS, () => S.get().contrast, set('contrast'), undefined,
+    'Contrast|How strongly the board and pieces stand apart. Soft is gentler, Vivid separates light from dark squares and the two armies most. No performance cost.'));
   add('video', rangeRow('Resolution scale', 0.5, 1, 0.05, () => g().resolutionScale, (v) => gfx('resolutionScale', v), pct,
     'Resolution scale|Renders fewer pixels and stretches them. Lower is the biggest speed-up on weak GPUs and phones.'));
   add('video', optionRow<GraphicsSettings['shadows']>('Shadows', [{ value: 'off', label: 'Off' }, { value: 'low', label: 'Low' }, { value: 'high', label: 'High' }], () => g().shadows, (v) => gfx('shadows', v), undefined,
@@ -94,9 +106,15 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     file.value = '';
     refresh();
   });
-  add('audio', toggleRow('Music', () => S.get().musicEnabled, set('musicEnabled'), undefined, 'Music|Turns the background score on or off.'));
-  add('audio', rangeRow('Music volume', 0, 1, 0.05, () => S.get().musicVolume, set('musicVolume'), pct, 'Music volume|How loud the score plays.'));
-  add('audio', rangeRow('Effects volume', 0, 1, 0.05, () => S.get().sfxVolume, set('sfxVolume'), pct, 'Effects volume|Moves, clashes, shattering and interface sounds.'));
+  add('audio', toggleRow('Play music', () => S.get().musicEnabled, set('musicEnabled'), undefined, 'Music|Turns the background score on or off.'));
+  const ext = audio as Partial<AudioBusExt>;
+  const catGet = (c: AudioCategory) => (ext.getCategoryVolume ? ext.getCategoryVolume(c) : getCategoryVolume(c));
+  const catSet = (c: AudioCategory) => (v: number) => (ext.setCategoryVolume ? ext.setCategoryVolume(c, v) : setCategoryVolume(c, v));
+  add('audio', rangeRow('Music', 0, 1, 0.05, () => S.get().musicVolume, set('musicVolume'), pct, 'Music volume|How loud the score plays.'));
+  add('audio', rangeRow('Effects', 0, 1, 0.05, () => catGet('effects'), catSet('effects'), pct, 'Effects volume|Combat, clashes, shattering, shields and fanfares.'));
+  add('audio', rangeRow('Ambience', 0, 1, 0.05, () => catGet('ambience'), catSet('ambience'), pct, 'Ambience volume|Footsteps, hooves, sliding stone and the texture of the hall.'));
+  add('audio', rangeRow('Interface', 0, 1, 0.05, () => catGet('interface'), catSet('interface'), pct, 'Interface volume|Button clicks and menu sounds.'));
+  add('audio', rangeRow('All sound effects', 0, 1, 0.05, () => S.get().sfxVolume, set('sfxVolume'), pct, 'All sound effects|Master level for Effects, Ambience and Interface together.'));
   add('audio', actionRow('Your own music', 'Load a track', () => file.click(), { note: () => trackNote || (audio.hasMusic() ? 'A theme is loaded' : 'No track loaded'), tip: 'Your own music|Pick an audio file from your device. It stays on this device.' }));
 
   // ---- Gameplay
@@ -128,12 +146,8 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
   };
   add('gameplay', previewRow);
 
-  // ---- Controls (text)
-  const group = (title: string, items: Array<[string, string]>) => h('div', {}, h('h3', { text: title }), h('ul', {}, ...items.map(([k, v]) => h('li', {}, h('b', { text: k }), h('span', { text: v })))));
-  const controls = h('div', { class: 'ctl-grid' },
-    group('Mouse', [['Click', 'Select a piece, then click a lit tile to move'], ['Drag', 'Drag a piece onto a lit tile'], ['Right-drag', 'Orbit the camera (Free camera)'], ['Wheel', 'Zoom'], ['Click', 'Skip a fight animation']]),
-    group('Touch', [['Tap', 'Select a piece, tap a lit tile to move'], ['Drag', 'Optional: drag a piece to a tile'], ['Swipe', 'Orbit (Free camera)'], ['Pinch', 'Zoom'], ['Hold', 'Show a tooltip'], ['Tap', 'Skip a fight animation']]),
-    group('Keyboard', [['Arrows', 'Move between buttons; change a value'], ['Enter', 'Choose'], ['Esc', 'Back / pause'], ['Q  E', 'Switch settings tabs'], ['U', 'Undo'], ['J', 'Toggle the move list'], ['Space', 'Skip a fight animation']]));
+  // ---- Controls (tables)
+  const controls = createControlsPanel();
 
   // ---- layout
   const panels: Record<Cat, HTMLElement> = {} as Record<Cat, HTMLElement>;
@@ -157,6 +171,8 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     for (const x of CATS) { panels[x.id].hidden = x.id !== c; catBtns.get(x.id)!.classList.toggle('sel', x.id === c); catBtns.get(x.id)!.setAttribute('aria-selected', String(x.id === c)); catBtns.get(x.id)!.toggleAttribute('data-autofocus', x.id === c); }
     kick.textContent = CATS.find((x) => x.id === c)!.label;
     rowsHost.scrollTop = 0;
+    { const b = catBtns.get(c)!; if (cats.scrollWidth > cats.clientWidth) cats.scrollLeft = b.offsetLeft - (cats.clientWidth - b.offsetWidth) / 2; }
+    updateFade();
     refresh();
   };
   const cats = h('div', { class: 'cats', role: 'tablist' });
@@ -166,17 +182,25 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     catBtns.set(c.id, b);
     cats.append(b);
   }
-  cats.append(h('div', { class: 'spacer' }), (() => { const b = button('Back', () => d.exit(), { cls: 'back-cat', tip: 'Back|Return to the previous screen.', tipKey: 'Esc' }); return b; })());
+  cats.append(h('div', { class: 'spacer' }), (() => { const b = button('Back', () => d.exit(), { cls: 'back-cat', tip: 'Back|Return to the previous screen.', tipKey: KEY.back }); return b; })());
+  // Overflow hint for the horizontally scrolling tab bar (phone portrait): fades + chevrons at whichever edge has more tabs.
+  const catsWrap = h('div', { class: 'cats-wrap' }, cats);
+  const updateFade = () => {
+    const max = cats.scrollWidth - cats.clientWidth;
+    catsWrap.classList.toggle('more-l', max > 2 && cats.scrollLeft > 2);
+    catsWrap.classList.toggle('more-r', max > 2 && cats.scrollLeft < max - 2);
+  };
+  cats.addEventListener('scroll', updateFade, { passive: true });
+  window.addEventListener('resize', updateFade);
   const el = h('div', { class: 'scr settings in', role: 'dialog', 'aria-label': 'Settings' },
-    h('aside', { class: 'side' }, h('h2', { class: 'ttl', text: 'Settings' }), cats),
-    h('section', { class: 'panel' }, h('div', { class: 'hd' }, kick, h('h2', { class: 'ttl', text: 'Settings' }), h('div', { class: 'rule' })), rowsHost),
-    backHint(() => d.exit()));
+    h('aside', { class: 'side' }, h('h2', { class: 'ttl', text: 'Settings' }), catsWrap, backHint(() => d.exit())),
+    h('section', { class: 'panel' }, h('div', { class: 'hd' }, kick, h('h2', { class: 'ttl', text: 'Settings' }), h('div', { class: 'rule' })), rowsHost));
 
   function refresh() { for (const r of all) r.refresh(); }
   let open = false;
   S.subscribe(() => { if (open) refresh(); });
   window.addEventListener('keydown', (e) => {
-    if (!open || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!open || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing()) return;
     const i = CATS.findIndex((c) => c.id === cat);
     const k = e.key.toLowerCase();
     if (k === 'q' || e.key === 'PageUp') { choose(CATS[(i + CATS.length - 1) % CATS.length].id); e.preventDefault(); }
@@ -188,7 +212,7 @@ export function createSettings(d: SettingsDeps): Screen & { open(cat?: Cat): voi
     el,
     get isOpen() { return open; },
     open(c?: Cat) { if (c) choose(c); },
-    onShow() { open = true; refresh(); },
+    onShow() { open = true; refresh(); requestAnimationFrame(updateFade); },
     back() { open = false; d.exit(); return true; },
     /** Called by the stack when the screen is hidden. */
     onHide() { open = false; },

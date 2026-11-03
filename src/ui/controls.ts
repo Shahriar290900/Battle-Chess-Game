@@ -37,7 +37,7 @@ export function iconButton(path: string, label: string, onClick: () => void, cls
 export function backHint(onClick: () => void, label = 'Back'): HTMLButtonElement {
   const b = h('button', { class: 'hint-back', type: 'button', 'aria-label': label, 'data-nav': '' }, h('span', { class: 'kbd', text: 'Esc' }), h('span', { class: 'lbl', text: label }));
   b.addEventListener('click', onClick);
-  return b;
+  return tipOn(b, 'Back|Return to the previous screen.', 'Esc');
 }
 
 // ------------------------------------------------------------------ settings rows
